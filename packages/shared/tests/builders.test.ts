@@ -15,4 +15,9 @@ describe("builders", () => {
     expect(testCase.status).toBe("doing");
     expect(testCase.tests).toEqual([]);
   });
+
+  it("accepts null completedDay", () => {
+    const testCase = buildDefaultCase({ id: "case-2", title: "Case 2", completedDay: null });
+    expect(testCase.completedDay).toBeNull();
+  });
 });

@@ -1,10 +1,11 @@
 {
   "name": "tlog-vscode-extension",
   "displayName": "TLog",
-  "publisher": "tlog-dev",
-  "version": "0.1.0",
+  "publisher": "nihiyama",
+  "version": "0.1.2",
   "private": true,
   "description": "tlog VS Code extension",
+  "icon": "media/icon.png",
   "license": "SEE LICENSE IN LICENSE.txt",
   "repository": {
     "type": "git",
@@ -17,20 +18,146 @@
   "categories": [
     "Testing"
   ],
-  "activationEvents": [
-    "onCommand:tlog.hello"
-  ],
-  "main": "./dist/extension.js",
+  "main": "./dist/extension.cjs",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "tlog",
+          "title": "TLog",
+          "icon": "media/sidebar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "tlog": [
+        {
+          "id": "tlog.controls",
+          "name": "Controls",
+          "type": "webview"
+        },
+        {
+          "id": "tlog.tree",
+          "name": "Suites"
+        }
+      ]
+    },
     "commands": [
       {
-        "command": "tlog.hello",
-        "title": "TLog: Hello"
+        "command": "tlog.selectRoot",
+        "title": "TLog: Set Root",
+        "icon": {
+          "light": "media/icon.svg",
+          "dark": "media/icon.svg"
+        }
+      },
+      {
+        "command": "tlog.searchTags",
+        "title": "TLog: Search Tags",
+        "icon": {
+          "light": "media/icon.svg",
+          "dark": "media/icon.svg"
+        }
+      },
+      {
+        "command": "tlog.searchOwners",
+        "title": "TLog: Search Owners",
+        "icon": {
+          "light": "media/icon.svg",
+          "dark": "media/icon.svg"
+        }
+      },
+      {
+        "command": "tlog.clearSearch",
+        "title": "TLog: Clear Search",
+        "icon": {
+          "light": "media/icon.svg",
+          "dark": "media/icon.svg"
+        }
+      },
+      {
+        "command": "tlog.openManager",
+        "title": "TLog: Open Manager",
+        "icon": {
+          "light": "media/icon.svg",
+          "dark": "media/icon.svg"
+        }
+      },
+      {
+        "command": "tlog.refreshTree",
+        "title": "TLog: Refresh Tree",
+        "icon": {
+          "light": "media/icon.svg",
+          "dark": "media/icon.svg"
+        }
+      },
+      {
+        "command": "tlog.createSuite",
+        "title": "Create Suite",
+        "icon": {
+          "light": "media/new-folder.svg",
+          "dark": "media/new-folder.svg"
+        }
+      },
+      {
+        "command": "tlog.createCase",
+        "title": "Create Case",
+        "icon": {
+          "light": "media/new-file.svg",
+          "dark": "media/new-file.svg"
+        }
+      },
+      {
+        "command": "tlog.filterCases",
+        "title": "TLog: Filter Cases"
+      },
+      {
+        "command": "tlog.showSuiteStats",
+        "title": "TLog: Show Suite Statistics"
+      },
+      {
+        "command": "tlog.openRelated",
+        "title": "TLog: Open Related"
       }
-    ]
+    ],
+    "configuration": [
+      {
+        "title": "TLog",
+        "properties": {
+          "tlog.scopeMode": {
+            "type": "string",
+            "enum": [
+              "recursive",
+              "currentOnly"
+            ],
+            "default": "recursive",
+            "description": "Controls whether suite operations include descendant suites."
+          }
+        }
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "tlog.createSuite",
+          "when": "view == tlog.tree && viewItem == suite",
+          "group": "inline@1"
+        },
+        {
+          "command": "tlog.createCase",
+          "when": "view == tlog.tree && viewItem == suite",
+          "group": "inline@2"
+        },
+        {
+          "command": "tlog.openManager",
+          "when": "view == tlog.tree && (viewItem == suite || viewItem == case)",
+          "group": "navigation@1"
+        }
+      ]
+    }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --outfile=dist/extension.cjs --external:vscode",
     "watch": "tsc -p tsconfig.json -w --preserveWatchOutput",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
@@ -40,7 +167,8 @@
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0",
-    "@vscode/vsce": "^3.6.2"
+    "@vscode/vsce": "^3.6.2",
+    "esbuild": "^0.27.3"
   },
   "dependencies": {
     "@tlog/shared": "0.1.0"

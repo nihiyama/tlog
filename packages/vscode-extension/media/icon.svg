@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="TLog icon">
+  <defs>
+    <linearGradient id="bg" x1="16" y1="12" x2="112" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1f7aff"/>
+      <stop offset="1" stop-color="#0b3fb8"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="28" y1="28" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="url(#bg)"/>
+  <rect x="18" y="18" width="92" height="92" rx="18" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.22"/>
+
+  <path d="M38 42h52v10H38z" fill="#ffffff"/>
+  <path d="M38 62h36v10H38z" fill="#ffffff" fill-opacity="0.95"/>
+  <path d="M38 82h26v10H38z" fill="#ffffff" fill-opacity="0.9"/>
+
+  <circle cx="92" cy="67" r="12" fill="#09d0a3"/>
+  <path d="M87 67l3 3 7-7" fill="none" stroke="#083b2f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -45,7 +45,7 @@ export interface Issue {
   cause: string[];
   solution: string[];
   status: IssueStatus;
-  completedAt: TlogDateString;
+  completedDay: TlogDateString | null;
   related: string[];
   remarks: string[];
 }
@@ -60,7 +60,7 @@ export interface TestCase {
   operations: string[];
   related: string[];
   remarks: string[];
-  completedDay: TlogDateString;
+  completedDay: TlogDateString | null;
   tests: TestItem[];
   issues: Issue[];
 }

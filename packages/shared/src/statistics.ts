@@ -77,7 +77,9 @@ export function calculateBurndown(cases: TestCase[], start: string, end: string)
     const dayText = formatDate(day);
 
     const plannedCompleted = Math.min(summary.total, Math.ceil(((offset + 1) / days) * summary.total));
-    const actualCompleted = doneCases.filter((testCase) => testCase.completedDay <= dayText).length;
+    const actualCompleted = doneCases.filter(
+      (testCase) => testCase.completedDay !== null && testCase.completedDay <= dayText
+    ).length;
 
     buckets.push({
       date: dayText,

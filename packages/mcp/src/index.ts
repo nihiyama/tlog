@@ -1,61 +1,66 @@
 import { argv } from "node:process";
 import { pathToFileURL } from "node:url";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { tlogStatusSchema } from "@tlog/shared";
+import { parseYaml } from "@tlog/shared";
+import { MCP_SERVER_NAME, MCP_SERVER_VERSION } from "./constants.js";
+import {
+  createCaseFileCore,
+  createSuiteFileCore,
+  createSuiteFromPromptCore,
+  createTemplateDirectoryCore,
+  createTestcaseFromPromptCore,
+  expandTestcaseCore,
+  initTestsDirectoryCore,
+  listCasesCore,
+  listSuitesCore,
+  listTemplatesCore,
+  organizeExecutionTargetsCore,
+  resolveEntityPathByIdCore,
+  validateTestsDirectoryCore
+} from "./core-tools.js";
+import { normalizeCaseCandidate, normalizeSuiteCandidate } from "./normalization.js";
+import { hasStdioFlag, main, startMcpServerStdio } from "./runtime.js";
+import { createMcpServer } from "./server.js";
+import {
+  asObject,
+  extractPromptMetadata,
+  findAvailablePath,
+  resolvePathInsideWorkspace,
+  selectAppliedMode,
+  summarizeDiff
+} from "./utils.js";
 
-export const MCP_SERVER_NAME = "tlog-mcp";
-export const MCP_SERVER_VERSION = "0.1.0";
+export { MCP_SERVER_NAME, MCP_SERVER_VERSION };
+export {
+  createCaseFileCore,
+  createMcpServer,
+  createSuiteFileCore,
+  createSuiteFromPromptCore,
+  createTemplateDirectoryCore,
+  createTestcaseFromPromptCore,
+  expandTestcaseCore,
+  hasStdioFlag,
+  initTestsDirectoryCore,
+  listCasesCore,
+  listSuitesCore,
+  listTemplatesCore,
+  main,
+  organizeExecutionTargetsCore,
+  resolveEntityPathByIdCore,
+  startMcpServerStdio,
+  validateTestsDirectoryCore
+};
 
-export function createMcpServer(): McpServer {
-  const server = new McpServer({
-    name: MCP_SERVER_NAME,
-    version: MCP_SERVER_VERSION
-  });
-
-  server.registerTool(
-    "tlog_validate_status",
-    {
-      title: "Validate TLog status",
-      description: "Validate that a status is one of todo/doing/done",
-      inputSchema: {
-        status: tlogStatusSchema
-      }
-    },
-    async ({ status }) => {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Status is valid: ${status}`
-          }
-        ]
-      };
-    }
-  );
-
-  return server;
-}
-
-export function hasStdioFlag(args: string[]): boolean {
-  return args.includes("--stdio");
-}
-
-export async function startMcpServerStdio(): Promise<void> {
-  const server = createMcpServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-}
-
-export async function main(args: string[]): Promise<void> {
-  if (!hasStdioFlag(args.slice(2))) {
-    console.error("Usage: tlog-mcp --stdio");
-    process.exitCode = 1;
-    return;
-  }
-
-  await startMcpServerStdio();
-}
+export const __internal = {
+  asObject,
+  extractPromptMetadata,
+  resolvePathInsideWorkspace,
+  normalizeSuiteCandidate,
+  normalizeCaseCandidate,
+  summarizeDiff,
+  selectAppliedMode,
+  findAvailablePath,
+  parseYaml
+};
 
 if (argv[1] && import.meta.url === pathToFileURL(argv[1]).href) {
   main(argv).catch((error: unknown) => {

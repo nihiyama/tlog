@@ -4,6 +4,7 @@ import { isTlogDateString } from "./domain.js";
 const dateStringSchema = z
   .string()
   .refine((value) => isTlogDateString(value), "Expected date format YYYY-MM-DD");
+const nullableDateStringSchema = dateStringSchema.nullable();
 
 const nonEmptyStringSchema = z.string().min(1);
 const stringArraySchema = z.array(z.string());
@@ -55,7 +56,7 @@ export const issueSchema = z
     cause: stringArraySchema,
     solution: stringArraySchema,
     status: issueStatusSchema,
-    completedAt: dateStringSchema,
+    completedDay: nullableDateStringSchema,
     related: stringArraySchema,
     remarks: stringArraySchema
   })
@@ -72,7 +73,7 @@ export const testCaseSchema = z
     operations: stringArraySchema,
     related: stringArraySchema,
     remarks: stringArraySchema,
-    completedDay: dateStringSchema,
+    completedDay: nullableDateStringSchema,
     tests: z.array(testItemSchema),
     issues: z.array(issueSchema)
   })

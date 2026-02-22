@@ -23,7 +23,7 @@ export interface BuildDefaultCaseInput {
   operations?: string[];
   related?: string[];
   remarks?: string[];
-  completedDay?: string;
+  completedDay?: string | null;
 }
 
 function todayDateString(): string {
@@ -60,7 +60,8 @@ export function buildDefaultSuite(input: BuildDefaultSuiteInput): Suite {
 }
 
 export function buildDefaultCase(input: BuildDefaultCaseInput): TestCase {
-  const completedDay = asTlogDateString(input.completedDay ?? todayDateString());
+  const completedDay =
+    input.completedDay === null ? null : asTlogDateString(input.completedDay ?? todayDateString());
 
   const candidate: TestCase = {
     id: input.id,
