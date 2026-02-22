@@ -1,0 +1,24 @@
+version: "3"
+
+tasks:
+  auth:
+    desc: auth codex
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - cmd: codex login --device-auth
+        ignore_error: true
+    silent: true
+  up:
+    desc: up codex
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - cmd: codex
+        ignore_error: true
+    silent: true
+  set_config:
+    desc: set config
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - cmd: cp -f .codex/config.toml ~/.codex/config.toml
+        ignore_error: true
+    silent: true

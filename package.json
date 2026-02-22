@@ -1,0 +1,39 @@
+{
+  "name": "tlog-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo for tlog CLI, MCP server, VS Code extension, and shared libraries.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run --workspaces build",
+    "typecheck": "npm run --workspaces typecheck",
+    "test": "npm run --workspaces test",
+    "lint": "eslint . --ignore-pattern '**/dist/**' --ignore-pattern 'node_modules/**' --ignore-pattern '.codex/**'",
+    "lint:fix": "eslint . --fix --ignore-pattern '**/dist/**' --ignore-pattern 'node_modules/**' --ignore-pattern '.codex/**'",
+    "format": "prettier . --check",
+    "format:fix": "prettier . --write",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish",
+    "release:npm": "changeset publish",
+    "vscode:scaffold": "npx --package yo --package generator-code -- yo code",
+    "vscode:typecheck": "npm run --workspace tlog-vscode-extension typecheck",
+    "vscode:build": "npm run --workspace tlog-vscode-extension build",
+    "vscode:test": "npm run --workspace tlog-vscode-extension test",
+    "vscode:package": "npm run --workspace tlog-vscode-extension package:vsix",
+    "vscode:publish": "npm run --workspace tlog-vscode-extension publish:marketplace"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.21.0",
+    "@changesets/cli": "^2.29.6",
+    "@types/node": "^22.13.10",
+    "eslint": "^9.21.0",
+    "eslint-config-prettier": "^10.1.1",
+    "prettier": "^3.5.3",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.25.0",
+    "vitest": "^3.2.4"
+  }
+}

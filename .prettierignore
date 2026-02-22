@@ -1,0 +1,8 @@
+node_modules/
+**/dist/
+.codex/
+steering/
+packages/vscode-extension/*.vsix
+AGENTS.md
+README.md
+Taskfile.yaml

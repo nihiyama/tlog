@@ -1,0 +1,14 @@
+version: "3"
+
+dotenv: ['.env']
+
+includes:
+  codex: ".tasks/Taskfile.codex.yaml"
+
+tasks:
+  default:
+    dir: "{{.USER_WORKING_DIR}}"
+    desc: show command
+    cmds:
+      - task --list-all --sort none
+    silent: true

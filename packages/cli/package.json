@@ -1,0 +1,38 @@
+{
+  "name": "@tlog/cli",
+  "version": "0.1.0",
+  "description": "tlog command line interface",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tlog-dev/tlog.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/tlog-dev/tlog/tree/main/packages/cli",
+  "bugs": {
+    "url": "https://github.com/tlog-dev/tlog/issues"
+  },
+  "keywords": [
+    "tlog",
+    "cli",
+    "test-management",
+    "yaml"
+  ],
+  "type": "module",
+  "bin": {
+    "tlog": "bin/tlog.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tlog/shared": "0.1.0",
+    "commander": "^14.0.1"
+  }
+}

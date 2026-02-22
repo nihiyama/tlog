@@ -1,0 +1,3 @@
+Copyright (c) tlog contributors.
+
+All rights reserved.
