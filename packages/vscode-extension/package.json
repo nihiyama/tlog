@@ -2,7 +2,7 @@
   "name": "tlog-vscode-extension",
   "displayName": "TLog",
   "publisher": "nihiyama",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "tlog VS Code extension",
   "icon": "media/icon.png",
@@ -47,48 +47,48 @@
         "command": "tlog.selectRoot",
         "title": "TLog: Set Root",
         "icon": {
-          "light": "media/icon.svg",
-          "dark": "media/icon.svg"
+          "light": "media/sidebar-icon.svg",
+          "dark": "media/sidebar-icon.svg"
         }
       },
       {
         "command": "tlog.searchTags",
         "title": "TLog: Search Tags",
         "icon": {
-          "light": "media/icon.svg",
-          "dark": "media/icon.svg"
+          "light": "media/sidebar-icon.svg",
+          "dark": "media/sidebar-icon.svg"
         }
       },
       {
         "command": "tlog.searchOwners",
         "title": "TLog: Search Owners",
         "icon": {
-          "light": "media/icon.svg",
-          "dark": "media/icon.svg"
+          "light": "media/sidebar-icon.svg",
+          "dark": "media/sidebar-icon.svg"
         }
       },
       {
         "command": "tlog.clearSearch",
         "title": "TLog: Clear Search",
         "icon": {
-          "light": "media/icon.svg",
-          "dark": "media/icon.svg"
+          "light": "media/sidebar-icon.svg",
+          "dark": "media/sidebar-icon.svg"
         }
       },
       {
         "command": "tlog.openManager",
         "title": "TLog: Open Manager",
         "icon": {
-          "light": "media/icon.svg",
-          "dark": "media/icon.svg"
+          "light": "media/sidebar-icon.svg",
+          "dark": "media/sidebar-icon.svg"
         }
       },
       {
         "command": "tlog.refreshTree",
         "title": "TLog: Refresh Tree",
         "icon": {
-          "light": "media/icon.svg",
-          "dark": "media/icon.svg"
+          "light": "media/sidebar-icon.svg",
+          "dark": "media/sidebar-icon.svg"
         }
       },
       {

@@ -22,13 +22,47 @@ const FILTER_KEY = "tlog.treeFilters";
 type TreeFilters = {
   tags: string[];
   owners: string[];
+  testcaseStatus: Array<"todo" | "doing" | "done">;
+  issueHas: Array<"has" | "none">;
+  issueStatus: Array<"open" | "doing" | "resolved" | "pending">;
 };
+
+function defaultTreeFilters(): TreeFilters {
+  return {
+    tags: [],
+    owners: [],
+    testcaseStatus: [],
+    issueHas: [],
+    issueStatus: []
+  };
+}
+
+function normalizeTreeFilters(value: Partial<TreeFilters> | undefined): TreeFilters {
+  const base = defaultTreeFilters();
+  if (!value) {
+    return base;
+  }
+  return {
+    tags: Array.isArray(value.tags) ? value.tags : base.tags,
+    owners: Array.isArray(value.owners) ? value.owners : base.owners,
+    testcaseStatus: Array.isArray(value.testcaseStatus) ? value.testcaseStatus : base.testcaseStatus,
+    issueHas: Array.isArray(value.issueHas) ? value.issueHas : base.issueHas,
+    issueStatus: Array.isArray(value.issueStatus) ? value.issueStatus : base.issueStatus
+  };
+}
 
 type ControlsMessage =
   | { type: "ready" }
   | { type: "browseRoot" }
   | { type: "setRoot"; path: string }
-  | { type: "applySearch"; tags: string; owners: string }
+  | {
+      type: "applySearch";
+      tags: string;
+      owners: string;
+      testcaseStatus: Array<"todo" | "doing" | "done">;
+      issueHas: Array<"has" | "none">;
+      issueStatus: Array<"open" | "doing" | "resolved" | "pending">;
+    }
   | { type: "clearSearch" };
 
 type ManagerMessage =
@@ -57,12 +91,12 @@ type ManagerMessage =
       tags: string;
       scoped: boolean;
       status: "todo" | "doing" | "done" | null;
-      operations: string;
+      operations: string[];
       related: string;
       remarks: string;
       completedDay: string;
-      testsJson: string;
-      issuesJson: string;
+      tests: TestCase["tests"];
+      issues: TestCase["issues"];
     };
 
 let managerPanel: vscode.WebviewPanel | undefined;
@@ -95,6 +129,36 @@ function splitLines(value: string | undefined): string[] {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+}
+
+function matchCaseWithFilters(
+  item: {
+    status: TestCase["status"];
+    suiteOwners: string[];
+    issueCount: number;
+    issueStatuses: string[];
+  },
+  filters: TreeFilters
+): boolean {
+  if (filters.owners.length > 0 && !filters.owners.some((owner) => item.suiteOwners.includes(owner))) {
+    return false;
+  }
+  if (filters.testcaseStatus.length > 0 && !filters.testcaseStatus.includes((item.status ?? null) as "todo" | "doing" | "done")) {
+    return false;
+  }
+  if (filters.issueHas.length > 0) {
+    const hasIssues = item.issueCount > 0;
+    const hasMatch = (hasIssues && filters.issueHas.includes("has")) || (!hasIssues && filters.issueHas.includes("none"));
+    if (!hasMatch) {
+      return false;
+    }
+  }
+  if (filters.issueStatus.length > 0) {
+    if (!filters.issueStatus.some((status) => item.issueStatuses.includes(status))) {
+      return false;
+    }
+  }
+  return true;
 }
 
 class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeModel> {
@@ -157,7 +221,7 @@ class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeModel> {
 
     try {
       let nodes = await loadTree(this.rootDirectory);
-      const filters = this.context.workspaceState.get<TreeFilters>(FILTER_KEY, { tags: [], owners: [] });
+      const filters = normalizeTreeFilters(this.context.workspaceState.get<TreeFilters>(FILTER_KEY));
 
       if (filters.tags.length > 0 || filters.owners.length > 0) {
         const searchFilters: SearchFilters = {};
@@ -166,16 +230,7 @@ class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeModel> {
         }
 
         const snapshot = await getWorkspaceSnapshot(this.rootDirectory, searchFilters);
-        const allowedCaseIds = new Set(
-          snapshot.cases
-            .filter((item) => {
-              if (filters.owners.length === 0) {
-                return true;
-              }
-              return filters.owners.some((owner) => item.suiteOwners.includes(owner));
-            })
-            .map((item) => item.id)
-        );
+        const allowedCaseIds = new Set(snapshot.cases.filter((item) => matchCaseWithFilters(item, filters)).map((item) => item.id));
 
         nodes = nodes.filter((node) => node.type !== "case" || allowedCaseIds.has(node.id));
       }
@@ -309,6 +364,23 @@ function controlsHtml(): string {
         <button id="applySearch">Apply</button>
         <button id="clearSearch" class="secondary">Clear</button>
       </div>
+      <div class="label" style="margin-top:8px;">Status</div>
+      <div class="row">
+        <label><input type="checkbox" data-role="status" value="todo" /> todo</label>
+        <label><input type="checkbox" data-role="status" value="doing" /> doing</label>
+        <label><input type="checkbox" data-role="status" value="done" /> done</label>
+      </div>
+      <div class="label" style="margin-top:8px;">Issues</div>
+      <div class="row">
+        <label><input type="checkbox" data-role="issueHas" value="has" /> has</label>
+        <label><input type="checkbox" data-role="issueHas" value="none" /> none</label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" data-role="issueStatus" value="open" /> open</label>
+        <label><input type="checkbox" data-role="issueStatus" value="doing" /> doing</label>
+        <label><input type="checkbox" data-role="issueStatus" value="resolved" /> resolved</label>
+        <label><input type="checkbox" data-role="issueStatus" value="pending" /> pending</label>
+      </div>
     </div>
 
     <script>
@@ -317,6 +389,16 @@ function controlsHtml(): string {
       const tagsEl = document.getElementById("tags");
       const ownersEl = document.getElementById("owners");
       const statusEl = document.getElementById("status");
+      const statusChecks = Array.from(document.querySelectorAll('input[data-role="status"]'));
+      const issueHasChecks = Array.from(document.querySelectorAll('input[data-role="issueHas"]'));
+      const issueStatusChecks = Array.from(document.querySelectorAll('input[data-role="issueStatus"]'));
+      const selectedValues = (nodes) => nodes.filter((node) => node.checked).map((node) => node.value);
+      const setChecks = (nodes, values) => {
+        const set = new Set(values || []);
+        nodes.forEach((node) => {
+          node.checked = set.has(node.value);
+        });
+      };
 
       document.getElementById("setRoot").addEventListener("click", () => {
         vscode.postMessage({ type: "setRoot", path: rootPathEl.value.trim() });
@@ -325,7 +407,14 @@ function controlsHtml(): string {
         vscode.postMessage({ type: "browseRoot" });
       });
       document.getElementById("applySearch").addEventListener("click", () => {
-        vscode.postMessage({ type: "applySearch", tags: tagsEl.value, owners: ownersEl.value });
+        vscode.postMessage({
+          type: "applySearch",
+          tags: tagsEl.value,
+          owners: ownersEl.value,
+          testcaseStatus: selectedValues(statusChecks),
+          issueHas: selectedValues(issueHasChecks),
+          issueStatus: selectedValues(issueStatusChecks)
+        });
       });
       document.getElementById("clearSearch").addEventListener("click", () => {
         vscode.postMessage({ type: "clearSearch" });
@@ -337,6 +426,9 @@ function controlsHtml(): string {
           rootPathEl.value = msg.root || "";
           tagsEl.value = (msg.filters?.tags || []).join(", ");
           ownersEl.value = (msg.filters?.owners || []).join(", ");
+          setChecks(statusChecks, msg.filters?.testcaseStatus || []);
+          setChecks(issueHasChecks, msg.filters?.issueHas || []);
+          setChecks(issueStatusChecks, msg.filters?.issueStatus || []);
           statusEl.textContent = msg.status || "";
         }
       });
@@ -355,15 +447,24 @@ function managerHtml(): string {
     <style>
       body { font-family: ui-sans-serif, system-ui; margin: 0; padding: 16px; background: #f5f7fa; }
       .panel { background: #fff; border: 1px solid #d7dde6; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-      .row { display: flex; gap: 8px; flex-wrap: wrap; }
       input, textarea, select, button { font: inherit; border-radius: 6px; border: 1px solid #c6ced9; padding: 6px 8px; }
-      button { background: #0b5fff; color: #fff; border: none; }
+      button { background: #0b5fff; color: #fff; border: none; cursor: pointer; }
+      button.secondary { background: #5a6a7f; }
       .card { border: 1px solid #d7dde6; border-radius: 8px; padding: 10px; margin-top: 8px; }
       .muted { color: #5f7288; font-size: 12px; }
       .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
       .iconBtn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #c6ced9; background: #ffffff; color: #334155; cursor: pointer; }
       .iconBtn svg { width: 14px; height: 14px; }
-      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .field { display: grid; grid-template-columns: 170px 1fr; gap: 8px; align-items: center; margin-top: 6px; }
+      .field > label { font-size: 12px; color: #5f7288; }
+      .rangeLine { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
+      .chips { border: 1px solid #c6ced9; border-radius: 6px; padding: 6px; min-height: 36px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; background: #fff; }
+      .chip { background: #eef2f7; color: #334155; border-radius: 12px; padding: 2px 8px; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+      .chip button { background: transparent; color: #334155; border: none; padding: 0; cursor: pointer; }
+      .chipInput { border: none; outline: none; min-width: 140px; flex: 1; padding: 2px; }
+      .listRow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin-top: 6px; }
+      .bulletItem { border-top: 1px solid #e5eaf1; padding-top: 8px; margin-top: 8px; }
+      .suiteCaseLine { display: grid; grid-template-columns: 180px 1fr 90px auto; gap: 8px; align-items: center; border-top: 1px solid #e5eaf1; padding-top: 6px; margin-top: 6px; }
     </style>
   </head>
   <body>
@@ -372,27 +473,78 @@ function managerHtml(): string {
       <div id="status" class="muted"></div>
       <div id="detail"></div>
     </section>
-
     <script>
       const vscode = acquireVsCodeApi();
       const statusEl = document.getElementById('status');
       const detailEl = document.getElementById('detail');
       let snapshot = { root: '', suites: [], cases: [], selectedSuite: null, selectedCase: null, suiteCases: [] };
-
       function esc(v){ return (v || '').replace(/"/g, '&quot;'); }
       function fileIcon() {
         return '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 1.5h6.8L13 4.7V14.5H3z" stroke="currentColor" stroke-width="1.2"/><path d="M9.8 1.5v3.2H13" stroke="currentColor" stroke-width="1.2"/></svg>';
       }
-
-      function bindSuiteCard(card, suite) {
+      function createChipEditor(root, initialValues) {
+        let values = [...(initialValues || [])];
+        const chips = root.querySelector('[data-role="chips"]');
+        const input = root.querySelector('[data-role="chipInput"]');
+        const render = () => {
+          chips.innerHTML = '';
+          for (const value of values) {
+            const el = document.createElement('span');
+            el.className = 'chip';
+            el.innerHTML = '<span>' + esc(value) + '</span><button type="button">x</button>';
+            el.querySelector('button').addEventListener('click', () => {
+              values = values.filter((v) => v !== value);
+              render();
+            });
+            chips.appendChild(el);
+          }
+          chips.appendChild(input);
+        };
+        const pushInput = () => {
+          const raw = input.value.trim();
+          if (!raw) return;
+          const next = raw.split(',').map((v) => v.trim()).filter((v) => v.length > 0);
+          values = Array.from(new Set(values.concat(next)));
+          input.value = '';
+          render();
+        };
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            pushInput();
+          }
+        });
+        input.addEventListener('blur', () => pushInput());
+        render();
+        return { getValues: () => values.slice() };
+      }
+      function createSuiteCard(suite) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML =
+          '<div class="head"><div><strong>' + suite.id + '</strong> <span class="muted">' + suite.path + '</span></div><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div>' +
+          '<div class="field"><label>id</label><input value="' + esc(suite.id) + '" readonly /></div>' +
+          '<div class="field"><label>title</label><input data-role="title" value="' + esc(suite.title) + '" /></div>' +
+          '<div class="field"><label>tags</label><div data-role="tagsEditor" class="chips"><div data-role="chips"></div><input data-role="chipInput" class="chipInput" placeholder="comma or enter" /></div></div>' +
+          '<div class="field"><label>owners</label><div data-role="ownersEditor" class="chips"><div data-role="chips"></div><input data-role="chipInput" class="chipInput" placeholder="comma or enter" /></div></div>' +
+          '<div class="field"><label>scoped</label><label><input data-role="scoped" type="checkbox" ' + (suite.scoped ? 'checked' : '') + ' /> scoped</label></div>' +
+          '<div class="field"><label>related</label><input data-role="related" value="' + esc((suite.related || []).join(',')) + '" placeholder="related ids (csv)" /></div>' +
+          '<div class="field"><label>scheduled</label><div class="rangeLine"><input data-role="scheduledStart" type="date" value="' + esc(suite.duration?.scheduled?.start || '') + '" /><span>-</span><input data-role="scheduledEnd" type="date" value="' + esc(suite.duration?.scheduled?.end || '') + '" /></div></div>' +
+          '<div class="field"><label>actual</label><div class="rangeLine"><input data-role="actualStart" type="date" value="' + esc(suite.duration?.actual?.start || '') + '" /><span>-</span><input data-role="actualEnd" type="date" value="' + esc(suite.duration?.actual?.end || '') + '" /></div></div>' +
+          '<div class="field"><label>description</label><textarea data-role="description" rows="2">' + esc(suite.description || '') + '</textarea></div>' +
+          '<div class="field"><label>remarks</label><textarea data-role="remarks" rows="3" placeholder="one per line">' + esc((suite.remarks || []).join('\\n')) + '</textarea></div>' +
+          '<div style="margin-top:8px;"><button data-role="save">Save Suite</button></div>';
+        const tagsEditor = createChipEditor(card.querySelector('[data-role="tagsEditor"]'), suite.tags || []);
+        const ownersEditor = createChipEditor(card.querySelector('[data-role="ownersEditor"]'), suite.owners || []);
+        card.querySelector('[data-role="openRaw"]').addEventListener('click', () => vscode.postMessage({ type: 'openRaw', path: suite.path }));
         card.querySelector('[data-role="save"]').addEventListener('click', () => {
           vscode.postMessage({
             type: 'saveSuite',
             path: suite.path,
             title: card.querySelector('[data-role="title"]').value,
             description: card.querySelector('[data-role="description"]').value,
-            tags: card.querySelector('[data-role="tags"]').value,
-            owners: card.querySelector('[data-role="owners"]').value,
+            tags: tagsEditor.getValues().join(','),
+            owners: ownersEditor.getValues().join(','),
             scoped: card.querySelector('[data-role="scoped"]').checked,
             scheduledStart: card.querySelector('[data-role="scheduledStart"]').value,
             scheduledEnd: card.querySelector('[data-role="scheduledEnd"]').value,
@@ -402,69 +554,102 @@ function managerHtml(): string {
             remarks: card.querySelector('[data-role="remarks"]').value
           });
         });
-        card.querySelector('[data-role="openRaw"]').addEventListener('click', () => {
-          vscode.postMessage({ type: 'openRaw', path: suite.path });
-        });
-      }
-
-      function bindCaseCard(card, testCase) {
-        card.querySelector('[data-role="save"]').addEventListener('click', () => {
-          const status = card.querySelector('[data-role="status"]').value || null;
-          vscode.postMessage({
-            type: 'saveCase',
-            path: testCase.path,
-            title: card.querySelector('[data-role="title"]').value,
-            description: card.querySelector('[data-role="description"]').value,
-            tags: card.querySelector('[data-role="tags"]').value,
-            scoped: card.querySelector('[data-role="scoped"]').checked,
-            status,
-            operations: card.querySelector('[data-role="operations"]').value,
-            related: card.querySelector('[data-role="related"]').value,
-            remarks: card.querySelector('[data-role="remarks"]').value,
-            completedDay: card.querySelector('[data-role="completedDay"]').value,
-            testsJson: card.querySelector('[data-role="testsJson"]').value,
-            issuesJson: card.querySelector('[data-role="issuesJson"]').value
-          });
-        });
-        card.querySelector('[data-role="openRaw"]').addEventListener('click', () => {
-          vscode.postMessage({ type: 'openRaw', path: testCase.path });
-        });
-      }
-
-      function createSuiteCard(suite) {
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.innerHTML =
-          '<div class="head">' +
-            '<div><strong>' + suite.id + '</strong> <span class="muted">' + suite.path + '</span></div>' +
-            '<button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button>' +
-          '</div>' +
-          '<div class="row" style="margin-top:6px;">' +
-            '<label class="muted">id</label>' +
-            '<input data-role="id" value="' + esc(suite.id) + '" readonly />' +
-          '</div>' +
-          '<div class="row" style="margin-top:6px;">' +
-            '<input data-role="title" value="' + esc(suite.title) + '" style="min-width:260px" />' +
-            '<input data-role="tags" value="' + esc((suite.tags || []).join(',')) + '" placeholder="tags" />' +
-            '<input data-role="owners" value="' + esc((suite.owners || []).join(',')) + '" placeholder="owners" />' +
-          '</div>' +
-          '<div class="row" style="margin-top:6px;">' +
-            '<label><input data-role="scoped" type="checkbox" ' + (suite.scoped ? 'checked' : '') + ' /> scoped</label>' +
-            '<input data-role="related" value="' + esc((suite.related || []).join(',')) + '" placeholder="related ids (csv)" />' +
-          '</div>' +
-          '<div class="grid2" style="margin-top:6px;">' +
-            '<input data-role="scheduledStart" value="' + esc(suite.duration?.scheduled?.start || '') + '" placeholder="scheduled.start (YYYY-MM-DD)" />' +
-            '<input data-role="scheduledEnd" value="' + esc(suite.duration?.scheduled?.end || '') + '" placeholder="scheduled.end (YYYY-MM-DD)" />' +
-            '<input data-role="actualStart" value="' + esc(suite.duration?.actual?.start || '') + '" placeholder="actual.start (YYYY-MM-DD)" />' +
-            '<input data-role="actualEnd" value="' + esc(suite.duration?.actual?.end || '') + '" placeholder="actual.end (YYYY-MM-DD)" />' +
-          '</div>' +
-          '<textarea data-role="description" rows="2" style="width:100%;margin-top:6px;">' + (suite.description || '') + '</textarea>' +
-          '<textarea data-role="remarks" rows="3" style="width:100%;margin-top:6px;" placeholder="remarks (one per line)">' + ((suite.remarks || []).join('\\n')) + '</textarea>' +
-          '<div class="row" style="margin-top:6px;"><button data-role="save">Save Suite</button></div>';
-        bindSuiteCard(card, suite);
         return card;
       }
-
+      function createNumberedList(listEl, values) {
+        const renumber = () => {
+          let i = 1;
+          for (const row of listEl.querySelectorAll('[data-role="list-row"]')) {
+            row.querySelector('[data-role="index"]').textContent = String(i) + '.';
+            i += 1;
+          }
+        };
+        const add = (value = '') => {
+          const row = document.createElement('div');
+          row.className = 'listRow';
+          row.setAttribute('data-role', 'list-row');
+          row.innerHTML = '<span data-role="index">1.</span><input data-role="value" value="' + esc(value) + '" /><button class="secondary" type="button" data-role="remove">Remove</button>';
+          row.querySelector('[data-role="remove"]').addEventListener('click', () => { row.remove(); renumber(); });
+          listEl.appendChild(row);
+          renumber();
+        };
+        for (const v of values || []) add(v);
+        return {
+          add,
+          values: () => Array.from(listEl.querySelectorAll('[data-role="value"]')).map((el) => el.value.trim()).filter((v) => v.length > 0)
+        };
+      }
+      function createTestsEditor(root, tests) {
+        const list = root.querySelector('[data-role="testsList"]');
+        const add = (item = { name: '', expected: '', actual: '', trails: [], status: null }) => {
+          const row = document.createElement('div');
+          row.className = 'bulletItem';
+          row.setAttribute('data-role', 'test-item');
+          const status = item.status || '';
+          row.innerHTML =
+            '<div class="muted">・Test</div>' +
+            '<div class="field"><label>name</label><input data-key="name" value="' + esc(item.name || '') + '" /></div>' +
+            '<div class="field"><label>expected</label><textarea data-key="expected" rows="2">' + esc(item.expected || '') + '</textarea></div>' +
+            '<div class="field"><label>actual</label><textarea data-key="actual" rows="2">' + esc(item.actual || '') + '</textarea></div>' +
+            '<div class="field"><label>trails</label><input data-key="trails" value="' + esc((item.trails || []).join(',')) + '" placeholder="csv" /></div>' +
+            '<div class="field"><label>status</label><select data-key="status">' +
+              '<option value="" ' + (status === '' ? 'selected' : '') + '>null</option>' +
+              '<option value="pass" ' + (status === 'pass' ? 'selected' : '') + '>pass</option>' +
+              '<option value="fail" ' + (status === 'fail' ? 'selected' : '') + '>fail</option>' +
+              '<option value="skip" ' + (status === 'skip' ? 'selected' : '') + '>skip</option>' +
+              '<option value="block" ' + (status === 'block' ? 'selected' : '') + '>block</option>' +
+            '</select></div>' +
+            '<div><button class="secondary" data-role="remove" type="button">Remove Test</button></div>';
+          row.querySelector('[data-role="remove"]').addEventListener('click', () => row.remove());
+          list.appendChild(row);
+        };
+        for (const t of tests || []) add(t);
+        return {
+          add,
+          values: () => Array.from(list.querySelectorAll('[data-role="test-item"]')).map((row) => ({
+            name: row.querySelector('[data-key="name"]').value.trim(),
+            expected: row.querySelector('[data-key="expected"]').value,
+            actual: row.querySelector('[data-key="actual"]').value,
+            trails: row.querySelector('[data-key="trails"]').value.split(',').map((v) => v.trim()).filter((v) => v.length > 0),
+            status: row.querySelector('[data-key="status"]').value || null
+          })).filter((t) => t.name.length > 0)
+        };
+      }
+      function createIssuesEditor(root, issues) {
+        const list = root.querySelector('[data-role="issuesList"]');
+        const add = (issue = { incident: '', owners: [], cause: [], solution: [], status: 'open', completedDay: null, related: [], remarks: [] }) => {
+          const row = document.createElement('div');
+          row.className = 'bulletItem';
+          row.setAttribute('data-role', 'issue-item');
+          row.innerHTML =
+            '<div class="muted">・Issue</div>' +
+            '<div class="field"><label>incident</label><input data-key="incident" value="' + esc(issue.incident || '') + '" /></div>' +
+            '<div class="field"><label>owners</label><input data-key="owners" value="' + esc((issue.owners || []).join(',')) + '" placeholder="csv" /></div>' +
+            '<div class="field"><label>cause</label><textarea data-key="cause" rows="2" placeholder="one per line">' + esc((issue.cause || []).join('\\n')) + '</textarea></div>' +
+            '<div class="field"><label>solution</label><textarea data-key="solution" rows="2" placeholder="one per line">' + esc((issue.solution || []).join('\\n')) + '</textarea></div>' +
+            '<div class="field"><label>status</label><select data-key="status"><option value="open"' + (issue.status==='open'?' selected':'') + '>open</option><option value="doing"' + (issue.status==='doing'?' selected':'') + '>doing</option><option value="resolved"' + (issue.status==='resolved'?' selected':'') + '>resolved</option><option value="pending"' + (issue.status==='pending'?' selected':'') + '>pending</option></select></div>' +
+            '<div class="field"><label>completedDay</label><input data-key="completedDay" type="date" value="' + esc(issue.completedDay || '') + '" /></div>' +
+            '<div class="field"><label>related</label><input data-key="related" value="' + esc((issue.related || []).join(',')) + '" placeholder="csv" /></div>' +
+            '<div class="field"><label>remarks</label><textarea data-key="remarks" rows="2" placeholder="one per line">' + esc((issue.remarks || []).join('\\n')) + '</textarea></div>' +
+            '<div><button class="secondary" data-role="remove" type="button">Remove Issue</button></div>';
+          row.querySelector('[data-role="remove"]').addEventListener('click', () => row.remove());
+          list.appendChild(row);
+        };
+        for (const i of issues || []) add(i);
+        return {
+          add,
+          values: () => Array.from(list.querySelectorAll('[data-role="issue-item"]')).map((row) => ({
+            incident: row.querySelector('[data-key="incident"]').value.trim(),
+            owners: row.querySelector('[data-key="owners"]').value.split(',').map((v) => v.trim()).filter((v) => v.length > 0),
+            cause: row.querySelector('[data-key="cause"]').value.split(/\\r?\\n/).map((v) => v.trim()).filter((v) => v.length > 0),
+            solution: row.querySelector('[data-key="solution"]').value.split(/\\r?\\n/).map((v) => v.trim()).filter((v) => v.length > 0),
+            status: row.querySelector('[data-key="status"]').value,
+            completedDay: row.querySelector('[data-key="completedDay"]').value || null,
+            related: row.querySelector('[data-key="related"]').value.split(',').map((v) => v.trim()).filter((v) => v.length > 0),
+            remarks: row.querySelector('[data-key="remarks"]').value.split(/\\r?\\n/).map((v) => v.trim()).filter((v) => v.length > 0)
+          })).filter((i) => i.incident.length > 0)
+        };
+      }
       function createCaseCard(testCase) {
         const selectedNull = testCase.status === null ? 'selected' : '';
         const selectedTodo = testCase.status === 'todo' ? 'selected' : '';
@@ -473,45 +658,48 @@ function managerHtml(): string {
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML =
-          '<div class="head">' +
-            '<div><strong>' + testCase.id + '</strong> <span class="muted">' + testCase.path + '</span></div>' +
-            '<button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button>' +
-          '</div>' +
-          '<div class="row" style="margin-top:6px;">' +
-            '<label class="muted">id</label>' +
-            '<input data-role="id" value="' + esc(testCase.id) + '" readonly />' +
-          '</div>' +
-          '<div class="row" style="margin-top:6px;">' +
-            '<input data-role="title" value="' + esc(testCase.title) + '" style="min-width:260px" />' +
-            '<input data-role="tags" value="' + esc((testCase.tags || []).join(',')) + '" placeholder="tags (csv)" />' +
-            '<label><input data-role="scoped" type="checkbox" ' + (testCase.scoped ? 'checked' : '') + ' /> scoped</label>' +
-            '<select data-role="status">' +
-              '<option value="" ' + selectedNull + '>null</option>' +
-              '<option value="todo" ' + selectedTodo + '>todo</option>' +
-              '<option value="doing" ' + selectedDoing + '>doing</option>' +
-              '<option value="done" ' + selectedDone + '>done</option>' +
-            '</select>' +
-          '</div>' +
-          '<textarea data-role="description" rows="3" style="width:100%;margin-top:6px;">' + (testCase.description || '') + '</textarea>' +
-          '<textarea data-role="operations" rows="3" style="width:100%;margin-top:6px;" placeholder="operations (one per line)">' + ((testCase.operations || []).join('\\n')) + '</textarea>' +
-          '<div class="row" style="margin-top:6px;">' +
-            '<input data-role="related" value="' + esc((testCase.related || []).join(',')) + '" placeholder="related ids (csv)" />' +
-            '<input data-role="completedDay" value="' + esc(testCase.completedDay || '') + '" placeholder="completedDay (YYYY-MM-DD or empty)" />' +
-          '</div>' +
-          '<textarea data-role="remarks" rows="3" style="width:100%;margin-top:6px;" placeholder="remarks (one per line)">' + ((testCase.remarks || []).join('\\n')) + '</textarea>' +
-          '<textarea data-role="testsJson" rows="4" style="width:100%;margin-top:6px;" placeholder="tests JSON">' + esc(JSON.stringify(testCase.tests || [], null, 2)) + '</textarea>' +
-          '<textarea data-role="issuesJson" rows="4" style="width:100%;margin-top:6px;" placeholder="issues JSON">' + esc(JSON.stringify(testCase.issues || [], null, 2)) + '</textarea>' +
-          '<div class="row" style="margin-top:6px;">' +
-            '<button data-role="save">Save Case</button>' +
-            '<span class="muted">suite=' + (testCase.suiteId || '-') + ' tags=' + (testCase.tags || []).join(',') + '</span>' +
-          '</div>';
-        bindCaseCard(card, testCase);
+          '<div class="head"><div><strong>' + testCase.id + '</strong> <span class="muted">' + testCase.path + '</span></div><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div>' +
+          '<div class="field"><label>id</label><input value="' + esc(testCase.id) + '" readonly /></div>' +
+          '<div class="field"><label>title</label><input data-role="title" value="' + esc(testCase.title) + '" /></div>' +
+          '<div class="field"><label>tags</label><input data-role="tags" value="' + esc((testCase.tags || []).join(',')) + '" placeholder="csv" /></div>' +
+          '<div class="field"><label>scoped</label><label><input data-role="scoped" type="checkbox" ' + (testCase.scoped ? 'checked' : '') + ' /> scoped</label></div>' +
+          '<div class="field"><label>status</label><select data-role="status"><option value="" ' + selectedNull + '>null</option><option value="todo" ' + selectedTodo + '>todo</option><option value="doing" ' + selectedDoing + '>doing</option><option value="done" ' + selectedDone + '>done</option></select></div>' +
+          '<div class="field"><label>description</label><textarea data-role="description" rows="3">' + esc(testCase.description || '') + '</textarea></div>' +
+          '<div class="field"><label>operations</label><div><div data-role="operationsList"></div><button data-role="addOp" class="secondary" type="button" style="margin-top:6px;">Add Step</button></div></div>' +
+          '<div class="field"><label>related</label><input data-role="related" value="' + esc((testCase.related || []).join(',')) + '" placeholder="csv" /></div>' +
+          '<div class="field"><label>completedDay</label><input data-role="completedDay" type="date" value="' + esc(testCase.completedDay || '') + '" /></div>' +
+          '<div class="field"><label>remarks</label><textarea data-role="remarks" rows="3" placeholder="one per line">' + esc((testCase.remarks || []).join('\\n')) + '</textarea></div>' +
+          '<div class="field"><label>tests</label><div><div data-role="testsList"></div><button data-role="addTest" class="secondary" type="button" style="margin-top:6px;">Add Test</button></div></div>' +
+          '<div class="field"><label>issues</label><div><div data-role="issuesList"></div><button data-role="addIssue" class="secondary" type="button" style="margin-top:6px;">Add Issue</button></div></div>' +
+          '<div style="margin-top:8px;"><button data-role="save">Save Case</button></div>';
+        const ops = createNumberedList(card.querySelector('[data-role="operationsList"]'), testCase.operations || []);
+        card.querySelector('[data-role="addOp"]').addEventListener('click', () => ops.add(''));
+        const testsEditor = createTestsEditor(card, testCase.tests || []);
+        card.querySelector('[data-role="addTest"]').addEventListener('click', () => testsEditor.add());
+        const issuesEditor = createIssuesEditor(card, testCase.issues || []);
+        card.querySelector('[data-role="addIssue"]').addEventListener('click', () => issuesEditor.add());
+        card.querySelector('[data-role="openRaw"]').addEventListener('click', () => vscode.postMessage({ type: 'openRaw', path: testCase.path }));
+        card.querySelector('[data-role="save"]').addEventListener('click', () => {
+          vscode.postMessage({
+            type: 'saveCase',
+            path: testCase.path,
+            title: card.querySelector('[data-role="title"]').value,
+            description: card.querySelector('[data-role="description"]').value,
+            tags: card.querySelector('[data-role="tags"]').value,
+            scoped: card.querySelector('[data-role="scoped"]').checked,
+            status: card.querySelector('[data-role="status"]').value || null,
+            operations: ops.values(),
+            related: card.querySelector('[data-role="related"]').value,
+            remarks: card.querySelector('[data-role="remarks"]').value,
+            completedDay: card.querySelector('[data-role="completedDay"]').value,
+            tests: testsEditor.values(),
+            issues: issuesEditor.values()
+          });
+        });
         return card;
       }
-
       function render() {
         statusEl.textContent = 'root=' + (snapshot.root || '-') + ' suites=' + snapshot.suites.length + ' cases=' + snapshot.cases.length;
-
         detailEl.innerHTML = '';
         if (snapshot.selectedSuite) {
           const title = document.createElement('h4');
@@ -523,7 +711,11 @@ function managerHtml(): string {
           casesTitle.textContent = 'Cases in Suite';
           detailEl.appendChild(casesTitle);
           for (const testCase of snapshot.suiteCases || []) {
-            detailEl.appendChild(createCaseCard(testCase));
+            const line = document.createElement('div');
+            line.className = 'suiteCaseLine';
+            line.innerHTML = '<span>' + esc(testCase.id) + '</span><span>' + esc(testCase.title || '') + '</span><span class="muted">' + esc(testCase.status || 'null') + '</span><button class="iconBtn" data-role="openCaseRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button>';
+            line.querySelector('[data-role="openCaseRaw"]').addEventListener('click', () => vscode.postMessage({ type: 'openRaw', path: testCase.path }));
+            detailEl.appendChild(line);
           }
           return;
         }
@@ -539,7 +731,6 @@ function managerHtml(): string {
         empty.textContent = 'Select a suite or case from the tree to edit.';
         detailEl.appendChild(empty);
       }
-
       window.addEventListener('message', (event) => {
         const msg = event.data;
         if (msg.type === 'snapshot') {
@@ -550,7 +741,6 @@ function managerHtml(): string {
           statusEl.textContent = 'Error: ' + msg.message;
         }
       });
-
       vscode.postMessage({ type: 'ready' });
     </script>
   </body>
@@ -567,19 +757,14 @@ async function postSnapshot(
     return;
   }
 
-  const filters = context.workspaceState.get<TreeFilters>(FILTER_KEY, { tags: [], owners: [] });
+  const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
   const searchFilters: SearchFilters = {};
   if (filters.tags.length > 0) {
     searchFilters.tags = filters.tags;
   }
 
   const snapshot = await getWorkspaceSnapshot(rootDirectory, searchFilters);
-  const filteredCases = snapshot.cases.filter((item) => {
-    if (filters.owners.length === 0) {
-      return true;
-    }
-    return filters.owners.some((owner) => item.suiteOwners.includes(owner));
-  });
+  const filteredCases = snapshot.cases.filter((item) => matchCaseWithFilters(item, filters));
   const selection = managerSelection;
   const selectedSuiteCard = selection?.type === "suite" ? snapshot.suites.find((suite) => suite.path === selection.path) ?? null : null;
   const selectedCaseCard = selection?.type === "case" ? filteredCases.find((item) => item.path === selection.path) ?? null : null;
@@ -746,21 +931,19 @@ async function openManager(
           }
 
           if (message.type === "saveCase") {
-            const tests = JSON.parse(message.testsJson) as TestCase["tests"];
-            const issues = JSON.parse(message.issuesJson) as TestCase["issues"];
             await updateCase(message.path, {
               title: message.title,
               description: message.description,
               tags: splitCsv(message.tags),
               scoped: message.scoped,
               status: message.status,
-              operations: splitLines(message.operations),
+              operations: message.operations,
               related: splitCsv(message.related),
               remarks: splitLines(message.remarks),
               completedDay:
                 message.completedDay.trim().length > 0 ? (message.completedDay as TestCase["completedDay"]) : null,
-              tests,
-              issues
+              tests: message.tests,
+              issues: message.issues
             });
             await provider.refresh();
             await postSnapshot(managerPanel, provider.getRootDirectory(), context);
@@ -786,7 +969,7 @@ async function openManager(
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const vscodeApi = await import("vscode");
-  await context.workspaceState.update(FILTER_KEY, { tags: [], owners: [] } as TreeFilters);
+  await context.workspaceState.update(FILTER_KEY, defaultTreeFilters());
   const provider = new TlogTreeDataProvider(vscodeApi, context);
   const tree = vscodeApi.window.createTreeView("tlog.tree", { treeDataProvider: provider });
   context.subscriptions.push(tree);
@@ -813,12 +996,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
 
-    const currentFilters = context.workspaceState.get<TreeFilters>(FILTER_KEY, { tags: [], owners: [] });
+    const currentFilters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
     if (currentFilters.tags.length === 0 && currentFilters.owners.length === 0) {
       return;
     }
 
-    const cleared: TreeFilters = { tags: [], owners: [] };
+    const cleared: TreeFilters = defaultTreeFilters();
     await context.workspaceState.update(FILTER_KEY, cleared);
     await refreshAllViews();
     await postControlsState(provider.getRootDirectory(), cleared, "Search cleared to show created item");
@@ -851,7 +1034,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         webviewView.webview.onDidReceiveMessage((message: ControlsMessage) => {
           void (async () => {
-            const filters = context.workspaceState.get<TreeFilters>(FILTER_KEY, { tags: [], owners: [] });
+            const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
 
             if (message.type === "ready") {
               await postControlsState(provider.getRootDirectory(), filters);
@@ -887,7 +1070,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (message.type === "applySearch") {
               const next: TreeFilters = {
                 tags: splitCsv(message.tags),
-                owners: splitCsv(message.owners)
+                owners: splitCsv(message.owners),
+                testcaseStatus: message.testcaseStatus,
+                issueHas: message.issueHas,
+                issueStatus: message.issueStatus
               };
               await context.workspaceState.update(FILTER_KEY, next);
               await provider.refresh();
@@ -899,7 +1085,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
 
             if (message.type === "clearSearch") {
-              const next: TreeFilters = { tags: [], owners: [] };
+              const next: TreeFilters = defaultTreeFilters();
               await context.workspaceState.update(FILTER_KEY, next);
               await provider.refresh();
               await postControlsState(provider.getRootDirectory(), next, "Search cleared");
@@ -922,7 +1108,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       await provider.setRootDirectory(root);
-      const filters = context.workspaceState.get<TreeFilters>(FILTER_KEY, { tags: [], owners: [] });
+      const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
       await postControlsState(provider.getRootDirectory(), filters, `Root: ${root}`);
       if (managerPanel) {
         await postSnapshot(managerPanel, provider.getRootDirectory(), context);
@@ -932,7 +1118,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscodeApi.commands.registerCommand("tlog.searchTags", async () => {
-      const current = context.workspaceState.get<TreeFilters>(FILTER_KEY, { tags: [], owners: [] });
+      const current = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
       const input = await vscodeApi.window.showInputBox({
         prompt: "Search tags (comma separated)",
         value: current.tags.join(",")
@@ -952,7 +1138,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscodeApi.commands.registerCommand("tlog.searchOwners", async () => {
-      const current = context.workspaceState.get<TreeFilters>(FILTER_KEY, { tags: [], owners: [] });
+      const current = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
       const input = await vscodeApi.window.showInputBox({
         prompt: "Search owners (comma separated)",
         value: current.owners.join(",")
@@ -972,9 +1158,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscodeApi.commands.registerCommand("tlog.clearSearch", async () => {
-      await context.workspaceState.update(FILTER_KEY, { tags: [], owners: [] } as TreeFilters);
+      await context.workspaceState.update(FILTER_KEY, defaultTreeFilters());
       await provider.refresh();
-      await postControlsState(provider.getRootDirectory(), { tags: [], owners: [] }, "Search cleared");
+      await postControlsState(provider.getRootDirectory(), defaultTreeFilters(), "Search cleared");
       if (managerPanel) {
         await postSnapshot(managerPanel, provider.getRootDirectory(), context);
       }
@@ -1143,7 +1329,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await provider.refresh();
   await postControlsState(
     provider.getRootDirectory(),
-    context.workspaceState.get<TreeFilters>(FILTER_KEY, { tags: [], owners: [] })
+    normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY))
   );
 }
 

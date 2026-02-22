@@ -49,6 +49,8 @@ export interface CaseCard {
   tags: string[];
   suiteId?: string;
   suiteOwners: string[];
+  issueCount: number;
+  issueStatuses: string[];
   scheduledStart?: string;
   scheduledEnd?: string;
 }
@@ -296,6 +298,8 @@ export async function getWorkspaceSnapshot(rootDir: string, filters: SearchFilte
         suiteId: nodes.find((candidate) => candidate.type === "suite" && candidate.path === node.parentPath)?.id
         ,
         suiteOwners: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.owners : [],
+        issueCount: testCase.issues.length,
+        issueStatuses: Array.from(new Set(testCase.issues.map((issue) => issue.status))),
         scheduledStart: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.duration.scheduled.start : undefined,
         scheduledEnd: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.duration.scheduled.end : undefined
       });
