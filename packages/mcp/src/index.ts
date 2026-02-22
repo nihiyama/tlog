@@ -17,7 +17,7 @@ export function createMcpServer(): McpServer {
     "tlog_validate_status",
     {
       title: "Validate TLog status",
-      description: "Validate that a status is one of todo/doing/done/blocked",
+      description: "Validate that a status is one of todo/doing/done",
       inputSchema: {
         status: tlogStatusSchema
       }

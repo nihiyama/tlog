@@ -10,7 +10,7 @@ describe("initializeWorkspace", () => {
     initializeWorkspace(dir);
 
     const yaml = readFileSync(join(dir, "tests", "index.yaml"), "utf8");
-    expect(yaml).toContain("suite: default");
-    expect(yaml).toContain("cases: []");
+    expect(yaml).toContain("id: default");
+    expect(yaml).toContain("title: Default Suite");
   });
 });

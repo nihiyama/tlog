@@ -17,9 +17,17 @@ function initWorkspace(cwd: string): void {
 
   const suite = tlogSuiteSchema.parse(defaultTlogSuite);
   const initialYaml = [
-    `suite: ${suite.suite}`,
+    `id: ${suite.id}`,
+    `title: ${suite.title}`,
+    `tags: []`,
     `description: ${suite.description}`,
-    `cases: [${suite.cases.join(", ")}]`,
+    `scoped: ${suite.scoped}`,
+    `owners: []`,
+    "duration:",
+    `  scheduled: { start: ${suite.duration.scheduled.start}, end: ${suite.duration.scheduled.end} }`,
+    `  actual: { start: ${suite.duration.actual.start}, end: ${suite.duration.actual.end} }`,
+    `related: []`,
+    `remarks: []`,
     ""
   ].join("\n");
 

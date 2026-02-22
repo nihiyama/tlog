@@ -45,6 +45,8 @@ npm run build
   - command: `tlog init`
 - MCP package: `@tlog/mcp`
   - execution image: `npx @tlog/mcp --stdio`
+- Shared package: `@tlog/shared`
+  - API contract: `packages/shared/README.md`
 - VS Code extension package: `tlog-vscode-extension`
 
 ### Development Commands
