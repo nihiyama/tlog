@@ -35,7 +35,11 @@ jobs:
       - name: Merge coverage reports
         run: |
           mkdir -p coverage
-          find packages -path "*/coverage/lcov.info" -type f -exec cat {} + > coverage/lcov.info
+          : > coverage/lcov.info
+          for f in $(find packages -path "*/coverage/lcov.info" -type f | sort); do
+            pkg_dir="$(dirname "$(dirname "$f")")"
+            sed "s|^SF:|SF:${pkg_dir}/|" "$f" >> coverage/lcov.info
+          done
           test -s coverage/lcov.info
 
       - name: Upload coverage to Coveralls
