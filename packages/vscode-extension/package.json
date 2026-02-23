@@ -2,7 +2,7 @@
   "name": "vscode-tlog",
   "displayName": "TLog Test Manager",
   "publisher": "nihiyama",
-  "version": "0.1.30",
+  "version": "0.1.31",
   "private": true,
   "description": "tlog VS Code extension",
   "icon": "media/icon.png",
