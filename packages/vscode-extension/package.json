@@ -1,6 +1,6 @@
 {
   "name": "vscode-tlog",
-  "displayName": "TLog",
+  "displayName": "TLog Test Manager",
   "publisher": "nihiyama",
   "version": "0.1.30",
   "private": true,
