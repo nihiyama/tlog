@@ -31,8 +31,8 @@ jobs:
 
       - name: Verify before release
         run: |
-          npm run typecheck
           npm run build
+          npm run typecheck
           npm run test
 
       - name: Version or Publish npm packages
