@@ -58,6 +58,6 @@ jobs:
 
       - name: Publish VS Code extension
         if: steps.changesets.outputs.published == 'true' && steps.vscode_version.outputs.changed == 'true'
-        run: npm run --workspace tlog-vscode-extension publish:marketplace
+        run: npm run --workspace vscode-tlog publish:marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
