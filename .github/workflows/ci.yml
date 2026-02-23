@@ -29,5 +29,20 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Test
-        run: npm run test
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Merge coverage reports
+        run: |
+          mkdir -p coverage
+          find packages -path "*/coverage/lcov.info" -type f -exec cat {} + > coverage/lcov.info
+          test -s coverage/lcov.info
+
+      - name: Upload coverage to Coveralls
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.COVERALLS_REPO_TOKEN != ''
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage/lcov.info
+        env:
+          COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
