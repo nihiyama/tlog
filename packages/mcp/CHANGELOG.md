@@ -1,5 +1,11 @@
 # @tlog/mcp
 
+## 0.1.6
+
+### Patch Changes
+
+- f485b65: Release MCP server package only.
+
 ## 0.1.5
 
 ### Patch Changes
