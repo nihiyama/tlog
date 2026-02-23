@@ -4,8 +4,8 @@
   </picture>
 </div>
 
-[![](https://img.shields.io/github/actions/workflow/status/tlog-dev/tlog/ci.yml?branch=main&longCache=true&label=CI&logo=github%20actions&logoColor=fff)](https://github.com/tlog-dev/tlog/actions?query=workflow%3ACI)
-[![Coverage Status](https://coveralls.io/repos/github/tlog-dev/tlog/badge.svg?branch=main)](https://coveralls.io/github/tlog-dev/tlog?branch=main)
+[![](https://img.shields.io/github/actions/workflow/status/nihiyama/tlog/ci.yml?branch=main&longCache=true&label=CI&logo=github%20actions&logoColor=fff)](https://github.com/nihiyama/tlog/actions?query=workflow%3ACI)
+[![Coverage Status](https://coveralls.io/repos/github/nihiyama/tlog/badge.svg?branch=main)](https://coveralls.io/github/nihiyama/tlog?branch=main)
 
 TLog is a YAML-first test management product designed for teams that want test operations to be:
 
