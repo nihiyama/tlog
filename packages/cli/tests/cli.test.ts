@@ -76,6 +76,26 @@ describe("tlog cli", () => {
     expect(readFileSync(join(dir, "templates", "base", "sample.testcase.yaml"), "utf8")).toContain("id: template-case");
   });
 
+  it("template --from rejects legacy issue schema", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tlog-cli-template-legacy-"));
+    const sourceDir = join(dir, "legacy");
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(
+      join(sourceDir, "index.yaml"),
+      "id: s1\ntitle: S1\ntags: []\ndescription: ''\nscoped: true\nowners: []\nduration:\n  scheduled:\n    start: 2025-01-01\n    end: 2025-01-01\n  actual:\n    start: 2025-01-01\n    end: 2025-01-01\nrelated: []\nremarks: []\n",
+      "utf8"
+    );
+    writeFileSync(
+      join(sourceDir, "legacy.testcase.yaml"),
+      "id: c1\ntitle: C1\ntags: []\ndescription: ''\nscoped: true\nstatus: todo\noperations: []\nrelated: []\nremarks: []\ncompletedDay: null\ntests: []\nissues:\n  - incident: i1\n    owners: []\n    cause: []\n    solution: []\n    status: open\n    completedAt: 2025-01-02\n    related: []\n    remarks: []\n",
+      "utf8"
+    );
+
+    const result = runInDir(dir, ["template", "--from", "legacy", "--output", "templates/migrated"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Source template is invalid");
+  });
+
   it("suite create blocks duplicated id", () => {
     const dir = mkdtempSync(join(tmpdir(), "tlog-cli-suite-"));
 

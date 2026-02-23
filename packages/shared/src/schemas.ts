@@ -53,9 +53,10 @@ export const issueSchema = z
   .object({
     incident: nonEmptyStringSchema,
     owners: stringArraySchema,
-    cause: stringArraySchema,
-    solution: stringArraySchema,
+    causes: stringArraySchema,
+    solutinos: stringArraySchema,
     status: issueStatusSchema,
+    detectedDay: nullableDateStringSchema,
     completedDay: nullableDateStringSchema,
     related: stringArraySchema,
     remarks: stringArraySchema

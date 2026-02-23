@@ -42,9 +42,10 @@ export interface TestItem {
 export interface Issue {
   incident: string;
   owners: string[];
-  cause: string[];
-  solution: string[];
+  causes: string[];
+  solutinos: string[];
   status: IssueStatus;
+  detectedDay: TlogDateString | null;
   completedDay: TlogDateString | null;
   related: string[];
   remarks: string[];

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, isAbsolute, relative } from "node:path";
 import { calculateBurndown, parseYaml, validateCase, validateSuite } from "@tlog/shared";
 import type { SearchFilters, Suite, TestCase } from "@tlog/shared";
 import type * as vscode from "vscode";
@@ -11,6 +11,7 @@ import {
   getWorkspaceSnapshot,
   parseYamlDocument,
   resolveRelatedIds,
+  syncReciprocalRelated,
   updateCase,
   updateSuite
 } from "./tlog-workspace.js";
@@ -22,6 +23,7 @@ import { controlsHtml, managerHtml } from "./webviews.js";
 
 const ROOT_KEY = "tlog.rootDirectory";
 const FILTER_KEY = "tlog.treeFilters";
+const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 type ControlsMessage =
   | { type: "ready" }
@@ -29,6 +31,7 @@ type ControlsMessage =
   | { type: "setRoot"; path: string }
   | {
       type: "applySearch";
+      scopedOnly: boolean;
       tags: string;
       owners: string;
       testcaseStatus: Array<"todo" | "doing" | "done">;
@@ -40,9 +43,12 @@ type ControlsMessage =
 type ManagerMessage =
   | { type: "ready" }
   | { type: "openRaw"; path: string }
+  | { type: "jumpToCase"; path: string }
+  | { type: "jumpToPath"; path: string; entityType?: "suite" | "case" }
   | {
       type: "saveSuite";
       path: string;
+      id: string;
       title: string;
       description: string;
       tags: string;
@@ -58,6 +64,7 @@ type ManagerMessage =
   | {
       type: "saveCase";
       path: string;
+      id: string;
       title: string;
       description: string;
       tags: string;
@@ -71,9 +78,67 @@ type ManagerMessage =
       issues: TestCase["issues"];
     };
 
+interface RelatedOption {
+  ref: string;
+  id: string;
+  label: string;
+  path: string;
+  entityType: "suite" | "case";
+}
+
+function buildRelatedOptions(snapshot: Awaited<ReturnType<typeof getWorkspaceSnapshot>>): RelatedOption[] {
+  const options: RelatedOption[] = [];
+  for (const suite of snapshot.suites) {
+    options.push({
+      ref: suite.id,
+      id: suite.id,
+      label: `[suite] ${suite.id} - ${suite.title}`,
+      path: suite.path,
+      entityType: "suite"
+    });
+  }
+  for (const testCase of snapshot.cases) {
+    const ref = testCase.suiteId ? `${testCase.suiteId}.${testCase.id}` : testCase.id;
+    options.push({
+      ref,
+      id: testCase.id,
+      label: `[case] ${ref} - ${testCase.title}`,
+      path: testCase.path,
+      entityType: "case"
+    });
+  }
+  return options;
+}
+
+function normalizeRelatedRefs(rawValues: string[], options: RelatedOption[]): string[] {
+  const byRef = new Map<string, string>();
+  for (const option of options) {
+    byRef.set(option.ref, option.id);
+    byRef.set(option.id, option.id);
+  }
+  return Array.from(
+    new Set(
+      rawValues
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+        .map((value) => byRef.get(value) ?? value)
+    )
+  );
+}
+
+function isValidEntityId(id: string): boolean {
+  return ID_PATTERN.test(id);
+}
+
 let managerPanel: vscode.WebviewPanel | undefined;
 let controlsView: vscode.WebviewView | undefined;
 let managerSelection: { type: "suite" | "case"; path: string } | undefined;
+let suppressManagerSnapshotUntil = 0;
+
+function isPathInside(parentDir: string, targetPath: string): boolean {
+  const rel = relative(parentDir, targetPath);
+  return rel.length > 0 && !rel.startsWith("..") && !isAbsolute(rel);
+}
 
 async function postSnapshot(
   panel: vscode.WebviewPanel,
@@ -92,10 +157,19 @@ async function postSnapshot(
   }
 
   const snapshot = await getWorkspaceSnapshot(rootDirectory, searchFilters);
+  const allSnapshot = await getWorkspaceSnapshot(rootDirectory);
   const filteredCases = snapshot.cases.filter((item) => matchCaseWithFilters(item, filters));
   const selection = managerSelection;
   const selectedSuiteCard = selection?.type === "suite" ? snapshot.suites.find((suite) => suite.path === selection.path) ?? null : null;
   const selectedCaseCard = selection?.type === "case" ? filteredCases.find((item) => item.path === selection.path) ?? null : null;
+  const suiteById = new Map(snapshot.suites.map((suite) => [suite.id, suite] as const));
+  const relatedOptions = buildRelatedOptions(allSnapshot);
+  const relatedRefById = relatedOptions.reduce<Record<string, string>>((acc, item) => {
+    if (!acc[item.id]) {
+      acc[item.id] = item.ref;
+    }
+    return acc;
+  }, {});
   const selectedSuite =
     selectedSuiteCard !== null
       ? ({
@@ -108,14 +182,16 @@ async function postSnapshot(
       ? ({
           ...parseYaml<TestCase>(await readFile(selectedCaseCard.path, "utf8")),
           path: selectedCaseCard.path,
-          suiteId: selectedCaseCard.suiteId
-        } as TestCase & { path: string; suiteId?: string })
+          suiteId: selectedCaseCard.suiteId,
+          suiteOwners: selectedCaseCard.suiteOwners,
+          suiteTags: selectedCaseCard.suiteId ? (suiteById.get(selectedCaseCard.suiteId)?.tags ?? []) : []
+        } as TestCase & { path: string; suiteId?: string; suiteOwners: string[]; suiteTags: string[] })
       : null;
   const suiteCases =
     selection?.type === "suite" && selectedSuiteCard
       ? await Promise.all(
-          filteredCases
-            .filter((item) => item.suiteId === selectedSuiteCard.id)
+          allSnapshot.cases
+            .filter((item) => isPathInside(dirname(selectedSuiteCard.path), item.path))
             .map(async (item) => ({
               ...parseYaml<TestCase>(await readFile(item.path, "utf8")),
               path: item.path,
@@ -132,7 +208,9 @@ async function postSnapshot(
       cases: filteredCases,
       selectedSuite,
       selectedCase,
-      suiteCases
+      suiteCases,
+      relatedOptions,
+      relatedRefById
     }
   });
 }
@@ -195,7 +273,8 @@ async function openManager(
   vscodeApi: typeof vscode,
   context: vscode.ExtensionContext,
   provider: TlogTreeDataProvider,
-  selectedNode?: TreeNodeModel
+  selectedNode?: TreeNodeModel,
+  onSelectionChanged?: (path: string) => Promise<void>
 ): Promise<void> {
   let root = provider.getRootDirectory();
   if (!root) {
@@ -233,7 +312,31 @@ async function openManager(
             return;
           }
 
+          if (message.type === "jumpToCase") {
+            managerSelection = { type: "case", path: message.path };
+            if (onSelectionChanged) {
+              await onSelectionChanged(message.path);
+            }
+            await postSnapshot(managerPanel, provider.getRootDirectory(), context);
+            return;
+          }
+
+          if (message.type === "jumpToPath") {
+            const node = provider.getNodes().find((item) => item.path === message.path);
+            const targetType = message.entityType ?? (node?.type === "suite" || node?.type === "case" ? node.type : "case");
+            managerSelection = { type: targetType, path: message.path };
+            if (onSelectionChanged) {
+              await onSelectionChanged(message.path);
+            }
+            await postSnapshot(managerPanel, provider.getRootDirectory(), context);
+            return;
+          }
+
           if (message.type === "saveSuite") {
+            suppressManagerSnapshotUntil = Date.now() + 1500;
+            const rootDirectory = provider.getRootDirectory();
+            const relatedOptions = rootDirectory ? buildRelatedOptions(await getWorkspaceSnapshot(rootDirectory)) : [];
+            const normalizedRelated = normalizeRelatedRefs(splitCsv(message.related), relatedOptions);
             await updateSuite(message.path, {
               title: message.title,
               description: message.description,
@@ -250,15 +353,21 @@ async function openManager(
                   end: message.actualEnd as Suite["duration"]["actual"]["end"]
                 }
               },
-              related: splitCsv(message.related),
+              related: normalizedRelated,
               remarks: splitLines(message.remarks)
             });
+            if (rootDirectory) {
+              await syncReciprocalRelated(rootDirectory, message.id, normalizedRelated);
+            }
             await provider.refresh();
-            await postSnapshot(managerPanel, provider.getRootDirectory(), context);
             return;
           }
 
           if (message.type === "saveCase") {
+            suppressManagerSnapshotUntil = Date.now() + 1500;
+            const rootDirectory = provider.getRootDirectory();
+            const relatedOptions = rootDirectory ? buildRelatedOptions(await getWorkspaceSnapshot(rootDirectory)) : [];
+            const normalizedRelated = normalizeRelatedRefs(splitCsv(message.related), relatedOptions);
             await updateCase(message.path, {
               title: message.title,
               description: message.description,
@@ -266,15 +375,21 @@ async function openManager(
               scoped: message.scoped,
               status: message.status,
               operations: message.operations,
-              related: splitCsv(message.related),
+              related: normalizedRelated,
               remarks: splitLines(message.remarks),
               completedDay:
                 message.completedDay.trim().length > 0 ? (message.completedDay as TestCase["completedDay"]) : null,
               tests: message.tests,
-              issues: message.issues
+              issues: message.issues.map((issue) => ({
+                ...issue,
+                related: normalizeRelatedRefs(issue.related ?? [], relatedOptions),
+                remarks: issue.remarks ?? []
+              }))
             });
+            if (rootDirectory) {
+              await syncReciprocalRelated(rootDirectory, message.id, normalizedRelated);
+            }
             await provider.refresh();
-            await postSnapshot(managerPanel, provider.getRootDirectory(), context);
             return;
           }
         } catch (error) {
@@ -290,6 +405,9 @@ async function openManager(
 
   if (selectedNode && (selectedNode.type === "suite" || selectedNode.type === "case")) {
     managerSelection = { type: selectedNode.type, path: selectedNode.path };
+    if (onSelectionChanged) {
+      await onSelectionChanged(selectedNode.path);
+    }
   }
 
   await postSnapshot(managerPanel, provider.getRootDirectory(), context);
@@ -314,7 +432,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!target) {
       return false;
     }
-    await tree.reveal(target, { select: true, focus: false, expand: target.type === "suite" ? 1 : 0 });
+    await tree.reveal(target, { select: true, focus: true, expand: target.type === "suite" ? 1 : 0 });
     return true;
   };
 
@@ -340,6 +458,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onYamlChanged = (uri: vscode.Uri): void => {
     const root = provider.getRootDirectory();
     if (!root || !isInsideRoot(root, uri.fsPath)) {
+      return;
+    }
+    if (Date.now() < suppressManagerSnapshotUntil) {
+      void provider.refresh();
       return;
     }
     void refreshAllViews();
@@ -397,6 +519,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
             if (message.type === "applySearch") {
               const next: TreeFilters = {
+                scopedOnly: message.scopedOnly,
                 tags: splitCsv(message.tags),
                 owners: splitCsv(message.owners),
                 testcaseStatus: message.testcaseStatus,
@@ -508,6 +631,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!id || !title) {
         return;
       }
+      if (!isValidEntityId(id)) {
+        vscodeApi.window.showErrorMessage("ID must contain only alphanumeric characters, '-' or '_'.");
+        return;
+      }
 
       const index = await buildWorkspaceIdIndex(root);
       if (index.byId.has(id)) {
@@ -533,6 +660,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const id = await vscodeApi.window.showInputBox({ prompt: "Case ID" });
       const title = await vscodeApi.window.showInputBox({ prompt: "Case title" });
       if (!id || !title) {
+        return;
+      }
+      if (!isValidEntityId(id)) {
+        vscodeApi.window.showErrorMessage("ID must contain only alphanumeric characters, '-' or '_'.");
         return;
       }
 
@@ -562,7 +693,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscodeApi.commands.registerCommand("tlog.openManager", async (node?: TreeNodeModel) => {
-      await openManager(vscodeApi, context, provider, node);
+      await openManager(vscodeApi, context, provider, node, async (path: string) => {
+        await revealOrClearFilters(path);
+      });
     })
   );
 
@@ -651,6 +784,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       await vscodeApi.commands.executeCommand("vscode.open", vscodeApi.Uri.file(target.path));
+    })
+  );
+
+  context.subscriptions.push(
+    vscodeApi.commands.registerCommand("tlog.openRawYaml", async (node?: TreeNodeModel) => {
+      if (!node || node.type === "guide") {
+        vscodeApi.window.showErrorMessage("Select suite/case node first.");
+        return;
+      }
+      await vscodeApi.commands.executeCommand("vscode.open", vscodeApi.Uri.file(node.path));
+    })
+  );
+
+  context.subscriptions.push(
+    vscodeApi.commands.registerCommand("tlog.deleteNode", async (node?: TreeNodeModel) => {
+      if (!node || node.type === "guide") {
+        vscodeApi.window.showErrorMessage("Select suite/case node first.");
+        return;
+      }
+
+      const label = node.type === "suite" ? `suite ${node.id}` : `case ${node.id}`;
+      const answer = await vscodeApi.window.showWarningMessage(
+        `Delete ${label}?`,
+        { modal: true },
+        "Delete"
+      );
+      if (answer !== "Delete") {
+        return;
+      }
+
+      const targetPath = node.type === "suite" ? dirname(node.path) : node.path;
+      const targetUri = vscodeApi.Uri.file(targetPath);
+      try {
+        await vscodeApi.workspace.fs.delete(targetUri, {
+          recursive: node.type === "suite",
+          useTrash: true
+        });
+      } catch (error) {
+        const message = String(error);
+        if (!message.toLowerCase().includes("trash")) {
+          throw error;
+        }
+        await vscodeApi.workspace.fs.delete(targetUri, {
+          recursive: node.type === "suite",
+          useTrash: false
+        });
+      }
+      await refreshAllViews();
     })
   );
 

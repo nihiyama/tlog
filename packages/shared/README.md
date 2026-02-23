@@ -26,7 +26,7 @@
 - `type TestItem`
   - input/output fields: `name`, `expected`, `actual`, `trails`, `status`
 - `type Issue`
-  - input/output fields: `incident`, `owners`, `cause`, `solution`, `status`, `completedDay`, `related`, `remarks`
+  - input/output fields: `incident`, `owners`, `causes`, `solutinos`, `status`, `detectedDay`, `completedDay`, `related`, `remarks`
 - status enums
   - testcase status: `"todo" | "doing" | "done" | null`
   - test result status: `"pass" | "fail" | "skip" | "block" | null`

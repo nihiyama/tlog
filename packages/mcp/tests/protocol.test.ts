@@ -71,7 +71,7 @@ describe("core tools", () => {
     expect(normalized.warnings.some((w) => w.includes("unknown testcase field removed: extraField"))).toBe(true);
   });
 
-  it("normalizes issues completedAt to completedDay and accepts null completedDay", () => {
+  it("ignores legacy issue day fields and keeps latest schema only", () => {
     const normalized = __internal.normalizeCaseCandidate({
       id: "c2",
       title: "Case 2",
@@ -80,10 +80,11 @@ describe("core tools", () => {
         {
           incident: "legacy issue",
           owners: [],
-          cause: [],
-          solution: [],
+          causes: [],
+          solutinos: [],
           status: "open",
           completedAt: "2026-02-20",
+          detectedAt: "2026-02-19",
           related: [],
           remarks: []
         }
@@ -91,10 +92,30 @@ describe("core tools", () => {
     });
 
     expect(normalized.entity.completedDay).toBeNull();
-    expect(normalized.entity.issues[0]?.completedDay).toBe("2026-02-20");
-    expect(
-      normalized.warnings.some((w) => w.includes("issues[0].completedAt was normalized to completedDay"))
-    ).toBe(true);
+    expect(normalized.entity.issues[0]?.detectedDay).toBeNull();
+    expect(normalized.entity.issues[0]?.completedDay).toBeNull();
+  });
+
+  it("ignores legacy issue detail fields cause/solution", () => {
+    const normalized = __internal.normalizeCaseCandidate({
+      id: "c3",
+      title: "Case 3",
+      issues: [
+        {
+          incident: "legacy detail field",
+          owners: [],
+          cause: ["legacy-cause"],
+          solution: ["legacy-solution"],
+          status: "open",
+          completedDay: null,
+          related: [],
+          remarks: []
+        }
+      ]
+    });
+
+    expect(normalized.entity.issues[0]?.causes).toEqual([]);
+    expect(normalized.entity.issues[0]?.solutinos).toEqual([]);
   });
 
   it("init and validate tests directory", async () => {

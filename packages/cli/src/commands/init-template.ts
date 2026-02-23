@@ -26,6 +26,33 @@ interface LocalTemplateData {
   testCase: Partial<TestCase>;
 }
 
+function normalizeTemplateCase(input: Partial<TestCase>): Partial<TestCase> {
+  const issues = Array.isArray(input.issues)
+    ? input.issues.map((issue) => {
+      if (!issue || typeof issue !== "object") {
+        return issue;
+      }
+
+      const source = issue as unknown as Record<string, unknown>;
+      const normalized: Record<string, unknown> = { ...source };
+
+      if (!("detectedDay" in normalized)) {
+        normalized.detectedDay = null;
+      }
+        if (!("completedDay" in normalized)) {
+          normalized.completedDay = null;
+        }
+
+        return normalized as unknown as (typeof input.issues)[number];
+      }) as typeof input.issues
+    : input.issues;
+
+  return {
+    ...input,
+    issues
+  };
+}
+
 function createDefaultTemplateData() {
   const suite = buildDefaultSuite({ id: "default", title: "Default Suite", description: "tlog test suite" });
   const testCase = buildDefaultCase({ id: "default-case", title: "Default Case", status: "todo" });
@@ -52,7 +79,7 @@ function readTemplateDirectory(templateDir: string): LocalTemplateData {
   const yamlFiles = readdirSync(templateDir).filter((name) => name.endsWith(".yaml") && name !== "index.yaml");
   if (yamlFiles.length > 0) {
     const firstCase = join(templateDir, yamlFiles[0]);
-    template.testCase = parseYamlFile<Partial<TestCase>>(firstCase);
+    template.testCase = normalizeTemplateCase(parseYamlFile<Partial<TestCase>>(firstCase));
   }
 
   return template;

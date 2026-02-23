@@ -10,7 +10,6 @@ import {
   validateCase,
   validateSuite
 } from "@tlog/shared";
-import { DEFAULT_DATE } from "./constants.js";
 import type { NormalizationResult } from "./types.js";
 import { asObject } from "./utils.js";
 
@@ -149,25 +148,26 @@ export function normalizeCaseCandidate(raw: unknown, defaults: Partial<TestCase>
           warnings.push(`issues[${idx}].status was normalized to open`);
         }
 
-        const legacyCompletedAt = issue.completedAt;
         const normalizedIssueCompletedDay =
           typeof issue.completedDay === "string" || issue.completedDay === null
             ? issue.completedDay
-            : typeof legacyCompletedAt === "string"
-              ? legacyCompletedAt
-              : DEFAULT_DATE;
-        if (typeof issue.completedDay !== "string" && issue.completedDay !== null && typeof legacyCompletedAt === "string") {
-          warnings.push(`issues[${idx}].completedAt was normalized to completedDay`);
-        }
+            : null;
+        const normalizedIssueDetectedDay =
+          typeof issue.detectedDay === "string" || issue.detectedDay === null
+            ? issue.detectedDay
+            : null;
 
         return {
           incident: typeof issue.incident === "string" ? issue.incident : `issue-${idx + 1}`,
           owners: Array.isArray(issue.owners) ? issue.owners.filter((v): v is string => typeof v === "string") : [],
-          cause: Array.isArray(issue.cause) ? issue.cause.filter((v): v is string => typeof v === "string") : [],
-          solution: Array.isArray(issue.solution)
-            ? issue.solution.filter((v): v is string => typeof v === "string")
+          causes: Array.isArray(issue.causes)
+            ? issue.causes.filter((v): v is string => typeof v === "string")
+            : [],
+          solutinos: Array.isArray(issue.solutinos)
+            ? issue.solutinos.filter((v): v is string => typeof v === "string")
             : [],
           status: statusParsed.success ? statusParsed.data : "open",
+          detectedDay: normalizedIssueDetectedDay,
           completedDay: normalizedIssueCompletedDay,
           related: Array.isArray(issue.related)
             ? issue.related.filter((v): v is string => typeof v === "string")

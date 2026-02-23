@@ -144,4 +144,11 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
 
     return Promise.resolve([]);
   }
+
+  getParent(element: TreeNodeModel): vscode.ProviderResult<TreeNodeModel> {
+    if (!element.parentPath) {
+      return undefined;
+    }
+    return this.nodes.find((node) => node.path === element.parentPath);
+  }
 }

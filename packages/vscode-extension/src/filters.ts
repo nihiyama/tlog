@@ -1,6 +1,7 @@
 import type { TestCase } from "@tlog/shared";
 
 export type TreeFilters = {
+  scopedOnly: boolean;
   tags: string[];
   owners: string[];
   testcaseStatus: Array<"todo" | "doing" | "done">;
@@ -10,6 +11,7 @@ export type TreeFilters = {
 
 export function defaultTreeFilters(): TreeFilters {
   return {
+    scopedOnly: false,
     tags: [],
     owners: [],
     testcaseStatus: [],
@@ -24,6 +26,7 @@ export function normalizeTreeFilters(value: Partial<TreeFilters> | undefined): T
     return base;
   }
   return {
+    scopedOnly: typeof value.scopedOnly === "boolean" ? value.scopedOnly : base.scopedOnly,
     tags: Array.isArray(value.tags) ? value.tags : base.tags,
     owners: Array.isArray(value.owners) ? value.owners : base.owners,
     testcaseStatus: Array.isArray(value.testcaseStatus) ? value.testcaseStatus : base.testcaseStatus,
@@ -34,6 +37,7 @@ export function normalizeTreeFilters(value: Partial<TreeFilters> | undefined): T
 
 export function matchCaseWithFilters(
   item: {
+    scoped: boolean;
     status: TestCase["status"];
     suiteOwners: string[];
     issueCount: number;
@@ -41,6 +45,9 @@ export function matchCaseWithFilters(
   },
   filters: TreeFilters
 ): boolean {
+  if (filters.scopedOnly && !item.scoped) {
+    return false;
+  }
   if (filters.owners.length > 0 && !filters.owners.some((owner) => item.suiteOwners.includes(owner))) {
     return false;
   }

@@ -2,7 +2,7 @@
   "name": "tlog-vscode-extension",
   "displayName": "TLog",
   "publisher": "nihiyama",
-  "version": "0.1.4",
+  "version": "0.1.19",
   "private": true,
   "description": "tlog VS Code extension",
   "icon": "media/icon.png",
@@ -118,6 +118,14 @@
       {
         "command": "tlog.openRelated",
         "title": "TLog: Open Related"
+      },
+      {
+        "command": "tlog.openRawYaml",
+        "title": "Open YAML"
+      },
+      {
+        "command": "tlog.deleteNode",
+        "title": "Delete"
       }
     ],
     "configuration": [
@@ -152,6 +160,16 @@
           "command": "tlog.openManager",
           "when": "view == tlog.tree && (viewItem == suite || viewItem == case)",
           "group": "navigation@1"
+        },
+        {
+          "command": "tlog.openRawYaml",
+          "when": "view == tlog.tree && (viewItem == suite || viewItem == case)",
+          "group": "navigation@2"
+        },
+        {
+          "command": "tlog.deleteNode",
+          "when": "view == tlog.tree && (viewItem == suite || viewItem == case)",
+          "group": "navigation@3"
         }
       ]
     }

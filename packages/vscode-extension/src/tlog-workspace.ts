@@ -44,6 +44,7 @@ export interface CaseCard {
   id: string;
   title: string;
   path: string;
+  scoped: boolean;
   status: TestCase["status"];
   description: string;
   tags: string[];
@@ -249,6 +250,56 @@ export async function updateSuite(
   await writeYamlFileAtomic(path, updated);
 }
 
+function uniqueNonEmpty(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
+}
+
+export async function syncReciprocalRelated(rootDir: string, sourceId: string, relatedIds: string[]): Promise<void> {
+  const index = await buildIdIndex(rootDir);
+  const resolved = resolveRelated(index, { related: uniqueNonEmpty(relatedIds) }).resolved;
+
+  for (const target of resolved) {
+    if (target.id === sourceId) {
+      continue;
+    }
+
+    if (target.type === "suite") {
+      const current = await readYamlFile<Suite>(target.path);
+      const nextRelated = uniqueNonEmpty([...(current.related ?? []), sourceId]);
+      if (nextRelated.length === (current.related ?? []).length && nextRelated.every((item, idx) => item === current.related[idx])) {
+        continue;
+      }
+
+      const updated: Suite = {
+        ...current,
+        related: nextRelated
+      };
+      const validation = validateSuite(updated);
+      if (!validation.ok || !validation.data) {
+        continue;
+      }
+      await writeYamlFileAtomic(target.path, updated);
+      continue;
+    }
+
+    const current = await readYamlFile<TestCase>(target.path);
+    const nextRelated = uniqueNonEmpty([...(current.related ?? []), sourceId]);
+    if (nextRelated.length === (current.related ?? []).length && nextRelated.every((item, idx) => item === current.related[idx])) {
+      continue;
+    }
+
+    const updated: TestCase = {
+      ...current,
+      related: nextRelated
+    };
+    const validation = validateCase(updated);
+    if (!validation.ok || !validation.data) {
+      continue;
+    }
+    await writeYamlFileAtomic(target.path, updated);
+  }
+}
+
 export async function buildWorkspaceIdIndex(rootDir: string): Promise<IdIndex> {
   return buildIdIndex(rootDir);
 }
@@ -292,6 +343,7 @@ export async function getWorkspaceSnapshot(rootDir: string, filters: SearchFilte
         id: testCase.id,
         title: testCase.title,
         path: node.path,
+        scoped: testCase.scoped,
         status: testCase.status,
         description: testCase.description,
         tags: testCase.tags,
@@ -321,7 +373,7 @@ function casesToTestCase(cases: CaseCard[]): TestCase[] {
     title: item.title,
     tags: item.tags,
     description: item.description,
-    scoped: true,
+    scoped: item.scoped,
     status: item.status,
     operations: [],
     related: [],
