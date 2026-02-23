@@ -119,7 +119,8 @@ export function createMcpServer(): McpServer {
     {
       title: "tlog instruction template",
       description:
-        "Basic reusable instruction templates for suite/case generation. Prefer tlog_schema_usage_template when you need strict schema-aware guidance."
+        "Basic reusable instruction templates for suite/case generation. Prefer tlog_schema_usage_template when you need strict schema-aware guidance.",
+      argsSchema: {}
     },
     async () => {
       return {
