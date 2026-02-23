@@ -2,7 +2,7 @@
   "name": "vscode-tlog",
   "displayName": "TLog",
   "publisher": "nihiyama",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "private": true,
   "description": "tlog VS Code extension",
   "icon": "media/icon.png",
