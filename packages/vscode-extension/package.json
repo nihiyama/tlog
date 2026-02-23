@@ -1,8 +1,8 @@
 {
-  "name": "tlog-vscode-extension",
+  "name": "vscode-tlog",
   "displayName": "TLog",
   "publisher": "nihiyama",
-  "version": "0.1.19",
+  "version": "0.1.28",
   "private": true,
   "description": "tlog VS Code extension",
   "icon": "media/icon.png",
@@ -179,6 +179,7 @@
     "watch": "tsc -p tsconfig.json -w --preserveWatchOutput",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "package:vsix": "vsce package --no-dependencies",
     "publish:marketplace": "vsce publish --no-dependencies",
     "publish:precheck": "npm run typecheck && npm run test && npm run package:vsix"

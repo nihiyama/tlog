@@ -39,6 +39,14 @@ export function splitCsv(value?: string): string[] {
     .filter((item) => item.length > 0);
 }
 
+const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+export function ensureValidId(id: string, label = "id"): void {
+  if (!ID_PATTERN.test(id)) {
+    throw new CliError(`Invalid ${label}: ${id}. Expected pattern ^[A-Za-z0-9_-]+$.`);
+  }
+}
+
 export function toStatus(value: string | undefined): TestCaseStatus | null {
   if (value === undefined || value === "null") {
     return null;

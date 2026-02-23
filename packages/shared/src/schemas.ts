@@ -50,18 +50,35 @@ export const testItemSchema = z
   .strict();
 
 export const issueSchema = z
-  .object({
-    incident: nonEmptyStringSchema,
-    owners: stringArraySchema,
-    causes: stringArraySchema,
-    solutinos: stringArraySchema,
-    status: issueStatusSchema,
-    detectedDay: nullableDateStringSchema,
-    completedDay: nullableDateStringSchema,
-    related: stringArraySchema,
-    remarks: stringArraySchema
-  })
-  .strict();
+  .preprocess((raw) => {
+    if (!raw || typeof raw !== "object") {
+      return raw;
+    }
+    const data = raw as Record<string, unknown>;
+    const next: Record<string, unknown> = { ...data };
+    if (!Array.isArray(next.causes) && Array.isArray(data.cause)) {
+      next.causes = data.cause;
+    }
+    if (!Array.isArray(next.solutions) && Array.isArray(data.solution)) {
+      next.solutions = data.solution;
+    }
+    if (!Array.isArray(next.solutions) && Array.isArray(data.solutinos)) {
+      next.solutions = data.solutinos;
+    }
+    return next;
+  }, z
+    .object({
+      incident: nonEmptyStringSchema,
+      owners: stringArraySchema,
+      causes: stringArraySchema,
+      solutions: stringArraySchema,
+      status: issueStatusSchema,
+      detectedDay: nullableDateStringSchema,
+      completedDay: nullableDateStringSchema,
+      related: stringArraySchema,
+      remarks: stringArraySchema
+    })
+    .strict());
 
 export const testCaseSchema = z
   .object({

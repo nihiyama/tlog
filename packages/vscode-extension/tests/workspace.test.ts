@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createCase, createSuite, findSuiteFiles, loadTree } from "../src/tlog-workspace.js";
 
+const IS_COVERAGE_RUN = process.env.VITEST_COVERAGE === "true" || process.env.npm_lifecycle_event === "test:coverage";
+const PERF_THRESHOLD_MS = IS_COVERAGE_RUN ? 4500 : 2000;
+
 describe("tlog workspace", () => {
   it("loads suite/case tree from index.yaml", async () => {
     const root = mkdtempSync(join(tmpdir(), "tlog-vscode-"));
@@ -116,6 +119,6 @@ describe("tlog workspace", () => {
     const elapsed = Date.now() - startedAt;
 
     expect(tree.filter((node) => node.type === "case")).toHaveLength(1000);
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(PERF_THRESHOLD_MS);
   });
 });

@@ -2,16 +2,15 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize, resolve } from "node:path";
 import {
   asTlogDateString,
-  buildCaseFileName,
   buildDefaultCase,
   buildDefaultSuite,
-  slugifyTitle,
   stringifyYaml
 } from "@tlog/shared";
 import {
   CliError,
   emitSuccess,
   ensureDirectory,
+  ensureValidId,
   findDuplicateId,
   formatOf,
   splitCsv,
@@ -45,6 +44,7 @@ export function runSuiteCreate(cwd: string, options: SuiteCreateOptions, globalO
   const format = formatOf(globalOptions);
   const rootDir = resolve(cwd, options.dir);
   mkdirSync(rootDir, { recursive: true });
+  ensureValidId(options.id, "suite id");
 
   const existing = findDuplicateId(rootDir, options.id);
   if (existing) {
@@ -53,8 +53,7 @@ export function runSuiteCreate(cwd: string, options: SuiteCreateOptions, globalO
     });
   }
 
-  const safeTitle = slugifyTitle(options.title);
-  const suiteDir = join(rootDir, `${options.id}-${safeTitle}`);
+  const suiteDir = join(rootDir, options.id);
   const indexPath = join(suiteDir, "index.yaml");
 
   if (existsSync(indexPath)) {
@@ -100,6 +99,7 @@ export function runCaseCreate(cwd: string, options: CaseCreateOptions, globalOpt
   const format = formatOf(globalOptions);
   const suiteDir = resolve(cwd, options.suiteDir);
   ensureDirectory(suiteDir, "Suite directory does not exist");
+  ensureValidId(options.id, "case id");
 
   const rootDir = dirname(suiteDir);
   const existing = findDuplicateId(rootDir, options.id);
@@ -109,7 +109,7 @@ export function runCaseCreate(cwd: string, options: CaseCreateOptions, globalOpt
     });
   }
 
-  const casePath = join(suiteDir, buildCaseFileName(options.id, options.title));
+  const casePath = join(suiteDir, `${options.id}.testcase.yaml`);
   if (existsSync(casePath)) {
     throw new CliError(`Case file already exists: ${safePath(casePath)}`);
   }

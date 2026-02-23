@@ -92,7 +92,12 @@ export const listCasesInputSchema = {
   filters: z
     .object({
       id: z.string().optional(),
-      status: z.string().optional()
+      status: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      owners: z.array(z.string()).optional(),
+      scopedOnly: z.boolean().optional(),
+      issueHas: z.string().optional(),
+      issueStatus: z.string().optional()
     })
     .optional()
 };
@@ -101,4 +106,71 @@ export const resolveEntityPathByIdInputSchema = {
   workspaceRoot: z.string().min(1),
   dir: z.string().min(1),
   id: z.string().min(1)
+};
+
+export const updateSuiteInputSchema = {
+  workspaceRoot: z.string().min(1),
+  dir: z.string().min(1),
+  id: z.string().min(1),
+  patch: z.record(z.unknown()),
+  write: z.boolean().default(false)
+};
+
+export const updateCaseInputSchema = {
+  workspaceRoot: z.string().min(1),
+  dir: z.string().min(1),
+  id: z.string().min(1),
+  patch: z.record(z.unknown()),
+  write: z.boolean().default(false)
+};
+
+export const getTlogSchemaInputSchema = {
+  topic: z.enum(["suite", "case", "enum", "issue", "all"]).default("all")
+};
+
+export const schemaUsagePromptArgsSchema = {
+  useCase: z.enum(["create_suite", "create_case", "update_case"]).default("create_case")
+};
+
+export const collectMissingContextInputSchema = {
+  operation: z.enum(["create_suite_from_prompt", "create_testcase_from_prompt", "update_suite", "update_case"]),
+  draft: z.record(z.unknown()).default({}),
+  requestElicitation: z.boolean().default(false)
+};
+
+export const resolveRelatedTargetsInputSchema = {
+  workspaceRoot: z.string().min(1),
+  dir: z.string().min(1),
+  sourceId: z.string().min(1),
+  relatedIds: z.array(z.string().min(1)).optional()
+};
+
+export const syncRelatedInputSchema = {
+  workspaceRoot: z.string().min(1),
+  dir: z.string().min(1),
+  sourceId: z.string().min(1),
+  relatedIds: z.array(z.string().min(1)).optional(),
+  mode: z.enum(["one-way", "two-way"]).default("two-way"),
+  write: z.boolean().default(false)
+};
+
+export const getWorkspaceSnapshotInputSchema = {
+  workspaceRoot: z.string().min(1),
+  dir: z.string().min(1),
+  excludeUnscoped: z.boolean().default(false)
+};
+
+export const suiteStatsInputSchema = {
+  workspaceRoot: z.string().min(1),
+  dir: z.string().min(1),
+  suiteId: z.string().min(1),
+  excludeUnscoped: z.boolean().default(false)
+};
+
+export const deleteEntityInputSchema = {
+  workspaceRoot: z.string().min(1),
+  dir: z.string().min(1),
+  id: z.string().min(1),
+  dryRun: z.boolean(),
+  confirm: z.boolean().optional()
 };

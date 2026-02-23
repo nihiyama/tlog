@@ -162,9 +162,15 @@ export function normalizeCaseCandidate(raw: unknown, defaults: Partial<TestCase>
           owners: Array.isArray(issue.owners) ? issue.owners.filter((v): v is string => typeof v === "string") : [],
           causes: Array.isArray(issue.causes)
             ? issue.causes.filter((v): v is string => typeof v === "string")
-            : [],
-          solutinos: Array.isArray(issue.solutinos)
-            ? issue.solutinos.filter((v): v is string => typeof v === "string")
+            : Array.isArray(issue.cause)
+              ? issue.cause.filter((v): v is string => typeof v === "string")
+              : [],
+          solutions: Array.isArray(issue.solutions)
+            ? issue.solutions.filter((v): v is string => typeof v === "string")
+            : Array.isArray(issue.solution)
+              ? issue.solution.filter((v): v is string => typeof v === "string")
+              : Array.isArray(issue.solutinos)
+                ? issue.solutinos.filter((v): v is string => typeof v === "string")
             : [],
           status: statusParsed.success ? statusParsed.data : "open",
           detectedDay: normalizedIssueDetectedDay,

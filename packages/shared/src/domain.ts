@@ -43,7 +43,7 @@ export interface Issue {
   incident: string;
   owners: string[];
   causes: string[];
-  solutinos: string[];
+  solutions: string[];
   status: IssueStatus;
   detectedDay: TlogDateString | null;
   completedDay: TlogDateString | null;

@@ -18,13 +18,25 @@ export function toToolResult(payload: Record<string, unknown>): ToolResult {
 }
 
 export function toToolError(message: string, code: string, details: Record<string, unknown> = {}): ToolResult {
+  const causeText = typeof details.cause === "string" ? details.cause : "";
+  let resolvedCode = code;
+  if (causeText.includes("validation:")) {
+    resolvedCode = "validation";
+  } else if (causeText.includes("security:")) {
+    resolvedCode = "security";
+  } else if (causeText.includes("conflict:")) {
+    resolvedCode = "conflict";
+  } else if (code === "missing_required_context") {
+    resolvedCode = "missing_required_context";
+  }
+
   return {
     content: [{ type: "text", text: message }],
     structuredContent: {
       error: {
-        code,
+        code: resolvedCode,
         message,
-        ...details
+        details
       }
     },
     isError: true
@@ -47,15 +59,20 @@ export function extractPromptMetadata(instruction: string, prefix: "suite" | "ca
   let id = idMatch?.[1]?.trim() ?? "";
   let title = titleMatch?.[1]?.trim() ?? "";
 
-  if (!title) {
-    const firstSentence = instruction.split(/[\n。.!?]/)[0]?.trim() ?? "";
-    title = firstSentence.length > 0 ? firstSentence.slice(0, 64) : `${prefix} generated ${DEFAULT_DATE}`;
-    warnings.push("title was inferred from instruction");
-  }
-
   if (!id) {
     id = `${prefix}-${slugifyTitle(title)}`;
     warnings.push("id was inferred from title");
+  }
+
+  if (!title) {
+    if (id) {
+      title = id;
+      warnings.push("title was inferred from id");
+    } else {
+      const firstSentence = instruction.split(/[\n。.!?]/)[0]?.trim() ?? "";
+      title = firstSentence.length > 0 ? firstSentence.slice(0, 64) : `${prefix} generated ${DEFAULT_DATE}`;
+      warnings.push("title was inferred from instruction");
+    }
   }
 
   return { id, title, warnings };

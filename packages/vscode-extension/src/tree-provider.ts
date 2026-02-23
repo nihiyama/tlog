@@ -27,7 +27,8 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
       caseDoing: icon("status-doing.svg"),
       caseDone: icon("status-done.svg"),
       suiteAllDone: icon("suite-all-done.svg"),
-      suiteNotAllDone: icon("suite-not-all-done.svg")
+      suiteNotAllDone: icon("suite-not-all-done.svg"),
+      createSuite: icon("new-folder.svg")
     };
   }
 
@@ -122,6 +123,14 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
     }
     if (element.type === "suite") {
       item.iconPath = element.suiteAllDone ? this.iconPaths.suiteAllDone : this.iconPaths.suiteNotAllDone;
+    }
+    if (element.type === "guide" && element.id === "guide-create-new") {
+      item.iconPath = this.iconPaths.createSuite;
+      item.command = {
+        command: "tlog.createSuite",
+        title: "Create Suite",
+        arguments: []
+      };
     }
     if (element.type !== "guide") {
       item.command = {

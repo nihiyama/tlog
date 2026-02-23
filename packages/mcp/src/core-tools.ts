@@ -1,11 +1,11 @@
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import {
+  calculateBurndown,
   buildCaseFileName,
   buildDefaultCase,
   buildDefaultSuite,
   buildIdIndex,
-  buildSuiteFileName,
   detectEntityType,
   extractTemplateFromDirectory,
   readYamlFile,
@@ -32,14 +32,58 @@ import {
   toRelativePath
 } from "./utils.js";
 
-function planPathForSuite(workspaceRoot: string, targetDir: string, suite: Suite): string {
+function inferDescriptionFromText(value: string | undefined, fallbackTitle: string): string {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  return fallbackTitle;
+}
+
+function planPathForSuite(workspaceRoot: string, targetDir: string, _suite: Suite): string {
   const resolvedDir = resolvePathInsideWorkspace(workspaceRoot, targetDir);
-  return join(resolvedDir, buildSuiteFileName(suite.id, suite.title));
+  return join(resolvedDir, "index.yaml");
+}
+
+const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+function assertValidIdFormat(id: string): void {
+  if (!ID_PATTERN.test(id)) {
+    throw new Error(`validation: invalid id format (${id}) expected ^[A-Za-z0-9_-]+$`);
+  }
+}
+
+async function assertNoDuplicateId(
+  workspaceRoot: string,
+  dir: string,
+  id: string,
+  currentPath?: string
+): Promise<void> {
+  const resolvedDir = resolvePathInsideWorkspace(workspaceRoot, dir);
+  let index;
+  try {
+    index = await buildIdIndex(resolvedDir);
+  } catch (error) {
+    if (String(error).includes("ENOENT")) {
+      return;
+    }
+    throw error;
+  }
+
+  const duplicate = index.duplicates.find((item) => item.id === id);
+  if (duplicate) {
+    const paths = duplicate.paths.map((path) => toRelativePath(workspaceRoot, path));
+    throw new Error(`conflict: duplicate id detected (${id}) paths=${paths.join(",")}`);
+  }
+
+  const existing = index.byId.get(id);
+  if (existing && existing.path !== currentPath) {
+    throw new Error(`conflict: id already exists (${id}) path=${toRelativePath(workspaceRoot, existing.path)}`);
+  }
 }
 
 function planPathForCase(workspaceRoot: string, targetDir: string, testCase: TestCase): string {
   const resolvedDir = resolvePathInsideWorkspace(workspaceRoot, targetDir);
-  return join(resolvedDir, buildCaseFileName(testCase.id, testCase.title));
+  return join(resolvedDir, `${testCase.id}.testcase.yaml`);
 }
 
 async function writeEntityIfRequested(
@@ -74,17 +118,22 @@ export async function createSuiteFromPromptCore(input: {
   write?: boolean;
 }): Promise<Record<string, unknown>> {
   const extracted = extractPromptMetadata(input.instruction, "suite");
+  assertValidIdFormat(extracted.id);
+  await assertNoDuplicateId(input.workspaceRoot, input.targetDir, extracted.id);
   const defaults = input.defaults ?? {};
+  const description = inferDescriptionFromText(defaults.description, extracted.title);
 
   const normalized = normalizeSuiteCandidate(
     {
       id: extracted.id,
       title: extracted.title,
+      description,
       ...defaults
     },
     {
       id: extracted.id,
       title: extracted.title,
+      description,
       ...defaults
     }
   );
@@ -108,11 +157,96 @@ export async function createTestcaseFromPromptCore(input: {
   context?: Record<string, unknown>;
   write?: boolean;
 }): Promise<Record<string, unknown>> {
+  function asStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  }
+
+  function buildTestsFromContext(context: Record<string, unknown> | undefined): Array<Record<string, unknown>> {
+    if (!context) {
+      return [];
+    }
+
+    const testsRaw = Array.isArray(context.tests) ? context.tests : [];
+    const fromTests: Array<Record<string, unknown>> = [];
+    for (let index = 0; index < testsRaw.length; index += 1) {
+      const obj = asObject(testsRaw[index]);
+      const expected = typeof obj.expected === "string" ? obj.expected.trim() : "";
+      if (expected.length === 0) {
+        continue;
+      }
+
+      fromTests.push({
+        name: typeof obj.name === "string" && obj.name.trim().length > 0 ? obj.name : `generated-${index + 1}`,
+        expected,
+        actual: typeof obj.actual === "string" ? obj.actual : "",
+        trails: Array.isArray(obj.trails) ? obj.trails.filter((v): v is string => typeof v === "string") : [],
+        status: obj.status ?? null
+      });
+    }
+
+    if (fromTests.length > 0) {
+      return fromTests;
+    }
+
+    const expectedRaw = context.expected;
+    const expectedList =
+      typeof expectedRaw === "string" && expectedRaw.trim().length > 0
+        ? [expectedRaw.trim()]
+        : asStringArray(expectedRaw);
+
+    return expectedList.map((expected, index) => ({
+      name: `generated-${index + 1}`,
+      expected,
+      actual: "",
+      trails: [],
+      status: null
+    }));
+  }
+
+  function buildCaseHintsFromInstruction(instruction: string): {
+    operations: string[];
+    tests: Array<Record<string, unknown>>;
+    warnings: string[];
+  } {
+    return {
+      operations: [`review instruction and derive executable steps: ${instruction}`],
+      tests: [
+        {
+          name: "generated-1",
+          expected: "期待結果を context.tests[].expected で指定してください",
+          actual: "",
+          trails: [],
+          status: null
+        }
+      ],
+      warnings: []
+    };
+  }
+
   const extracted = extractPromptMetadata(input.instruction, "case");
+  assertValidIdFormat(extracted.id);
+  await assertNoDuplicateId(input.workspaceRoot, input.suiteDir, extracted.id);
+  const contextOperations = asStringArray(input.context?.operations);
+  const contextTests = buildTestsFromContext(input.context);
+  const inferred = buildCaseHintsFromInstruction(input.instruction);
+
+  const operations = contextOperations.length > 0 ? contextOperations : inferred.operations;
+  const tests = contextTests.length > 0 ? contextTests : inferred.tests;
+  const description = inferDescriptionFromText(
+    typeof input.context?.description === "string" ? input.context.description : input.instruction,
+    extracted.title
+  );
+
   const merged = {
     ...input.context,
     id: extracted.id,
-    title: extracted.title
+    title: extracted.title,
+    description,
+    operations,
+    tests
   };
 
   const normalized = normalizeCaseCandidate(merged, { id: extracted.id, title: extracted.title });
@@ -124,7 +258,7 @@ export async function createTestcaseFromPromptCore(input: {
     testcase: normalized.entity,
     yamlText: writeResult.yamlText,
     writtenFile: writeResult.writtenFile,
-    warnings: [...extracted.warnings, ...normalized.warnings],
+    warnings: [...extracted.warnings, ...inferred.warnings, ...normalized.warnings],
     diffSummary: ["created testcase"]
   };
 }
@@ -345,9 +479,15 @@ export async function createSuiteFileCore(input: {
   fields?: Partial<Suite>;
   write?: boolean;
 }): Promise<Record<string, unknown>> {
+  assertValidIdFormat(input.id);
+  await assertNoDuplicateId(input.workspaceRoot, input.dir, input.id);
+  const description = inferDescriptionFromText(
+    typeof input.fields?.description === "string" ? input.fields.description : undefined,
+    input.title
+  );
   const normalized = normalizeSuiteCandidate(
-    { id: input.id, title: input.title, ...input.fields },
-    { id: input.id, title: input.title }
+    { id: input.id, title: input.title, description, ...input.fields },
+    { id: input.id, title: input.title, description }
   );
   const filePath = planPathForSuite(input.workspaceRoot, input.dir, normalized.entity);
   const writeResult = await writeEntityIfRequested(input.workspaceRoot, filePath, normalized.entity, input.write ?? false);
@@ -369,9 +509,15 @@ export async function createCaseFileCore(input: {
   fields?: Partial<TestCase>;
   write?: boolean;
 }): Promise<Record<string, unknown>> {
+  assertValidIdFormat(input.id);
+  await assertNoDuplicateId(input.workspaceRoot, input.dir, input.id);
+  const description = inferDescriptionFromText(
+    typeof input.fields?.description === "string" ? input.fields.description : undefined,
+    input.title
+  );
   const normalized = normalizeCaseCandidate(
-    { id: input.id, title: input.title, ...input.fields },
-    { id: input.id, title: input.title }
+    { id: input.id, title: input.title, description, ...input.fields },
+    { id: input.id, title: input.title, description }
   );
   const filePath = planPathForCase(input.workspaceRoot, input.dir, normalized.entity);
   const writeResult = await writeEntityIfRequested(input.workspaceRoot, filePath, normalized.entity, input.write ?? false);
@@ -382,6 +528,128 @@ export async function createCaseFileCore(input: {
     writtenFile: writeResult.writtenFile,
     warnings: normalized.warnings,
     diffSummary: ["created case file"]
+  };
+}
+
+export async function updateSuiteCore(input: {
+  workspaceRoot: string;
+  dir: string;
+  id: string;
+  patch: Partial<Suite>;
+  write?: boolean;
+}): Promise<Record<string, unknown>> {
+  const dir = resolvePathInsideWorkspace(input.workspaceRoot, input.dir);
+  assertValidIdFormat(input.id);
+  const index = await buildIdIndex(dir);
+  const found = resolveById(index, input.id);
+
+  if (!found || found.type !== "suite") {
+    throw new Error(`validation: suite id not found (${input.id})`);
+  }
+  await assertNoDuplicateId(input.workspaceRoot, input.dir, input.id, found.path);
+
+  const before = await readYamlFile<unknown>(found.path);
+  const beforeObj = asObject(before);
+
+  if (typeof input.patch.id === "string" && input.patch.id !== input.id) {
+    throw new Error("validation: id cannot be changed by update_suite");
+  }
+
+  const merged = {
+    ...beforeObj,
+    ...input.patch,
+    id: input.id
+  };
+
+  const normalized = normalizeSuiteCandidate(merged, {
+    id: input.id,
+    title: typeof beforeObj.title === "string" ? beforeObj.title : "Updated Suite"
+  });
+  const validation = validateSuite(normalized.entity);
+  if (!validation.ok || !validation.data) {
+    return {
+      updated: false,
+      id: input.id,
+      path: toRelativePath(input.workspaceRoot, found.path),
+      errors: validation.errors,
+      warnings: [...normalized.warnings, ...validation.warnings.map((warning) => `${warning.path}: ${warning.message}`)]
+    };
+  }
+
+  if (input.write) {
+    await writeYamlFileAtomic(found.path, validation.data);
+  }
+
+  return {
+    updated: true,
+    id: input.id,
+    path: toRelativePath(input.workspaceRoot, found.path),
+    before: beforeObj,
+    after: validation.data,
+    warnings: [...normalized.warnings, ...validation.warnings.map((warning) => `${warning.path}: ${warning.message}`)],
+    diffSummary: summarizeDiff(beforeObj, validation.data),
+    writtenFile: input.write ? toRelativePath(input.workspaceRoot, found.path) : null
+  };
+}
+
+export async function updateCaseCore(input: {
+  workspaceRoot: string;
+  dir: string;
+  id: string;
+  patch: Partial<TestCase>;
+  write?: boolean;
+}): Promise<Record<string, unknown>> {
+  const dir = resolvePathInsideWorkspace(input.workspaceRoot, input.dir);
+  assertValidIdFormat(input.id);
+  const index = await buildIdIndex(dir);
+  const found = resolveById(index, input.id);
+
+  if (!found || found.type !== "case") {
+    throw new Error(`validation: case id not found (${input.id})`);
+  }
+  await assertNoDuplicateId(input.workspaceRoot, input.dir, input.id, found.path);
+
+  const before = await readYamlFile<unknown>(found.path);
+  const beforeObj = asObject(before);
+
+  if (typeof input.patch.id === "string" && input.patch.id !== input.id) {
+    throw new Error("validation: id cannot be changed by update_case");
+  }
+
+  const merged = {
+    ...beforeObj,
+    ...input.patch,
+    id: input.id
+  };
+
+  const normalized = normalizeCaseCandidate(merged, {
+    id: input.id,
+    title: typeof beforeObj.title === "string" ? beforeObj.title : "Updated Case"
+  });
+  const validation = validateCase(normalized.entity);
+  if (!validation.ok || !validation.data) {
+    return {
+      updated: false,
+      id: input.id,
+      path: toRelativePath(input.workspaceRoot, found.path),
+      errors: validation.errors,
+      warnings: [...normalized.warnings, ...validation.warnings.map((warning) => `${warning.path}: ${warning.message}`)]
+    };
+  }
+
+  if (input.write) {
+    await writeYamlFileAtomic(found.path, validation.data);
+  }
+
+  return {
+    updated: true,
+    id: input.id,
+    path: toRelativePath(input.workspaceRoot, found.path),
+    before: beforeObj,
+    after: validation.data,
+    warnings: [...normalized.warnings, ...validation.warnings.map((warning) => `${warning.path}: ${warning.message}`)],
+    diffSummary: summarizeDiff(beforeObj, validation.data),
+    writtenFile: input.write ? toRelativePath(input.workspaceRoot, found.path) : null
   };
 }
 
@@ -497,7 +765,15 @@ export async function listSuitesCore(input: {
 export async function listCasesCore(input: {
   workspaceRoot: string;
   dir: string;
-  filters?: { id?: string; status?: string };
+  filters?: {
+    id?: string;
+    status?: string;
+    tags?: string[];
+    owners?: string[];
+    scopedOnly?: boolean;
+    issueHas?: string;
+    issueStatus?: string;
+  };
 }): Promise<Record<string, unknown>> {
   const root = resolvePathInsideWorkspace(input.workspaceRoot, input.dir);
   const files = await listYamlFiles(root);
@@ -520,6 +796,51 @@ export async function listCasesCore(input: {
 
     if (input.filters?.status && parsed.data.status !== input.filters.status) {
       continue;
+    }
+
+    if (input.filters?.tags && input.filters.tags.length > 0) {
+      const matchedTags = input.filters.tags.some((tag) => parsed.data.tags.includes(tag));
+      if (!matchedTags) {
+        continue;
+      }
+    }
+
+    if (input.filters?.scopedOnly === true && parsed.data.scoped !== true) {
+      continue;
+    }
+
+    if (input.filters?.owners && input.filters.owners.length > 0) {
+      const issueOwners = parsed.data.issues.flatMap((issue) => issue.owners);
+      const matchedOwners = input.filters.owners.some((owner) => issueOwners.includes(owner));
+      if (!matchedOwners) {
+        continue;
+      }
+    }
+
+    if (input.filters?.issueStatus) {
+      const hasIssueStatus = parsed.data.issues.some((issue) => issue.status === input.filters?.issueStatus);
+      if (!hasIssueStatus) {
+        continue;
+      }
+    }
+
+    if (input.filters?.issueHas && input.filters.issueHas.trim().length > 0) {
+      const keyword = input.filters.issueHas.trim().toLowerCase();
+      const hasKeyword = parsed.data.issues.some((issue) => {
+        const haystack = [
+          issue.incident,
+          ...issue.owners,
+          ...issue.causes,
+          ...issue.solutions,
+          ...issue.remarks
+        ]
+          .join("\n")
+          .toLowerCase();
+        return haystack.includes(keyword);
+      });
+      if (!hasKeyword) {
+        continue;
+      }
     }
 
     cases.push({
@@ -555,4 +876,353 @@ export async function resolveEntityPathByIdCore(input: {
       paths: dup.paths.map((path) => toRelativePath(input.workspaceRoot, path))
     }))
   };
+}
+
+export async function resolveRelatedTargetsCore(input: {
+  workspaceRoot: string;
+  dir: string;
+  sourceId: string;
+  relatedIds?: string[];
+}): Promise<Record<string, unknown>> {
+  const dir = resolvePathInsideWorkspace(input.workspaceRoot, input.dir);
+  const index = await buildIdIndex(dir);
+  const source = resolveById(index, input.sourceId);
+
+  if (!source) {
+    throw new Error(`validation: source id not found (${input.sourceId})`);
+  }
+
+  const targetIds = input.relatedIds ?? source.related;
+  const resolved: Array<Record<string, unknown>> = [];
+  const missing: string[] = [];
+
+  for (const id of targetIds) {
+    const entity = resolveById(index, id);
+    if (!entity) {
+      missing.push(id);
+      continue;
+    }
+    resolved.push({
+      id: entity.id,
+      type: entity.type,
+      title: entity.title,
+      path: toRelativePath(input.workspaceRoot, entity.path)
+    });
+  }
+
+  return {
+    source: {
+      id: source.id,
+      type: source.type,
+      path: toRelativePath(input.workspaceRoot, source.path)
+    },
+    resolved,
+    missing,
+    warnings: missing.map((id) => `related id not found: ${id}`)
+  };
+}
+
+export async function syncRelatedCore(input: {
+  workspaceRoot: string;
+  dir: string;
+  sourceId: string;
+  relatedIds?: string[];
+  mode: "one-way" | "two-way";
+  write?: boolean;
+}): Promise<Record<string, unknown>> {
+  const dir = resolvePathInsideWorkspace(input.workspaceRoot, input.dir);
+  const index = await buildIdIndex(dir);
+  const source = resolveById(index, input.sourceId);
+
+  if (!source) {
+    throw new Error(`validation: source id not found (${input.sourceId})`);
+  }
+
+  const targetIds = Array.from(new Set(input.relatedIds ?? source.related));
+  const resolvedTargets = targetIds
+    .map((id) => resolveById(index, id))
+    .filter((entity): entity is NonNullable<typeof entity> => Boolean(entity));
+  const missing = targetIds.filter((id) => !resolvedTargets.some((entity) => entity.id === id));
+
+  const sourceBefore = asObject(await readYamlFile<unknown>(source.path));
+  const sourceNext = {
+    ...sourceBefore,
+    related: targetIds
+  };
+
+  const normalizedSource =
+    source.type === "suite"
+      ? normalizeSuiteCandidate(sourceNext, {
+          id: source.id,
+          title: typeof sourceBefore.title === "string" ? sourceBefore.title : "Synced Suite"
+        })
+      : normalizeCaseCandidate(sourceNext, {
+          id: source.id,
+          title: typeof sourceBefore.title === "string" ? sourceBefore.title : "Synced Case"
+        });
+
+  const sourceValidation = source.type === "suite" ? validateSuite(normalizedSource.entity) : validateCase(normalizedSource.entity);
+  if (!sourceValidation.ok || !sourceValidation.data) {
+    return {
+      synced: false,
+      mode: input.mode,
+      sourceId: input.sourceId,
+      missing,
+      warnings: [...normalizedSource.warnings],
+      errors: sourceValidation.errors
+    };
+  }
+
+  const writePlans: Array<{ path: string; before: Record<string, unknown>; after: unknown }> = [
+    {
+      path: source.path,
+      before: sourceBefore,
+      after: sourceValidation.data
+    }
+  ];
+
+  if (input.mode === "two-way") {
+    for (const target of resolvedTargets) {
+      const targetBefore = asObject(await readYamlFile<unknown>(target.path));
+      const targetRelated = Array.isArray(targetBefore.related)
+        ? targetBefore.related.filter((item): item is string => typeof item === "string")
+        : [];
+      const targetNext = {
+        ...targetBefore,
+        related: Array.from(new Set([...targetRelated, source.id]))
+      };
+
+      const normalizedTarget =
+        target.type === "suite"
+          ? normalizeSuiteCandidate(targetNext, {
+              id: target.id,
+              title: typeof targetBefore.title === "string" ? targetBefore.title : "Synced Suite"
+            })
+          : normalizeCaseCandidate(targetNext, {
+              id: target.id,
+              title: typeof targetBefore.title === "string" ? targetBefore.title : "Synced Case"
+            });
+
+      const targetValidation = target.type === "suite" ? validateSuite(normalizedTarget.entity) : validateCase(normalizedTarget.entity);
+      if (!targetValidation.ok || !targetValidation.data) {
+        return {
+          synced: false,
+          mode: input.mode,
+          sourceId: input.sourceId,
+          targetId: target.id,
+          missing,
+          warnings: [...normalizedTarget.warnings],
+          errors: targetValidation.errors
+        };
+      }
+
+      writePlans.push({
+        path: target.path,
+        before: targetBefore,
+        after: targetValidation.data
+      });
+    }
+  }
+
+  if (input.write) {
+    for (const plan of writePlans) {
+      await writeYamlFileAtomic(plan.path, plan.after);
+    }
+  }
+
+  return {
+    synced: true,
+    mode: input.mode,
+    sourceId: source.id,
+    targetIds: resolvedTargets.map((target) => target.id),
+    missing,
+    warnings: missing.map((id) => `related id not found: ${id}`),
+    changed: writePlans.map((plan) => ({
+      path: toRelativePath(input.workspaceRoot, plan.path),
+      diffSummary: summarizeDiff(plan.before, plan.after)
+    })),
+    writtenFiles: input.write ? writePlans.map((plan) => toRelativePath(input.workspaceRoot, plan.path)) : []
+  };
+}
+
+export async function getWorkspaceSnapshotCore(input: {
+  workspaceRoot: string;
+  dir: string;
+  excludeUnscoped?: boolean;
+}): Promise<Record<string, unknown>> {
+  const suitesResult = await listSuitesCore({ workspaceRoot: input.workspaceRoot, dir: input.dir });
+  const casesResult = await listCasesCore({ workspaceRoot: input.workspaceRoot, dir: input.dir });
+
+  const suites = suitesResult.suites as Array<{ id: string; path: string }>;
+  const casesRaw = casesResult.cases as Array<{ id: string; status: string | null; path: string }>;
+
+  let cases = casesRaw;
+  if (input.excludeUnscoped) {
+    const root = resolvePathInsideWorkspace(input.workspaceRoot, input.dir);
+    const filtered: typeof casesRaw = [];
+    for (const item of casesRaw) {
+      const abs = resolvePathInsideWorkspace(input.workspaceRoot, item.path);
+      const loaded = await readYamlFile<unknown>(abs);
+      const parsed = testCaseSchema.safeParse(loaded);
+      if (!parsed.success || parsed.data.scoped !== false) {
+        filtered.push(item);
+      }
+    }
+    cases = filtered;
+    void root;
+  }
+
+  return {
+    snapshot: {
+      suites,
+      cases
+    },
+    summary: {
+      suiteCount: suites.length,
+      caseCount: cases.length
+    }
+  };
+}
+
+export async function suiteStatsCore(input: {
+  workspaceRoot: string;
+  dir: string;
+  suiteId: string;
+  excludeUnscoped?: boolean;
+}): Promise<Record<string, unknown>> {
+  const dir = resolvePathInsideWorkspace(input.workspaceRoot, input.dir);
+  const index = await buildIdIndex(dir);
+  const suiteEntity = resolveById(index, input.suiteId);
+
+  if (!suiteEntity || suiteEntity.type !== "suite") {
+    throw new Error(`validation: suite id not found (${input.suiteId})`);
+  }
+
+  const suiteLoaded = await readYamlFile<unknown>(suiteEntity.path);
+  const suiteParsed = suiteSchema.safeParse(suiteLoaded);
+  if (!suiteParsed.success) {
+    throw new Error(`validation: invalid suite schema (${input.suiteId})`);
+  }
+
+  const files = await listYamlFiles(dir);
+  const suiteDir = suiteEntity.path.slice(0, Math.max(0, suiteEntity.path.lastIndexOf("/")));
+  const allowScopedAggregation = suiteParsed.data.scoped === true;
+  const cases = [];
+  for (const file of files) {
+    if (!file.endsWith(".testcase.yaml")) {
+      continue;
+    }
+
+    const rel = toRelativePath(input.workspaceRoot, file);
+    if (suiteDir.length > 0 && !rel.startsWith(suiteDir)) {
+      continue;
+    }
+
+    const loaded = await readYamlFile<unknown>(file);
+    const parsed = testCaseSchema.safeParse(loaded);
+    if (!parsed.success) {
+      continue;
+    }
+
+    if (!allowScopedAggregation) {
+      continue;
+    }
+
+    if (parsed.data.scoped !== true) {
+      continue;
+    }
+
+    cases.push(parsed.data);
+  }
+
+  const burndown = calculateBurndown(
+    cases,
+    suiteParsed.data.duration.scheduled.start,
+    suiteParsed.data.duration.scheduled.end
+  );
+
+  return {
+    suite: {
+      id: suiteParsed.data.id,
+      title: suiteParsed.data.title,
+      path: toRelativePath(input.workspaceRoot, suiteEntity.path)
+    },
+    summary: burndown.summary,
+    burndown: burndown.buckets,
+    anomalies: burndown.anomalies
+  };
+}
+
+async function deleteEntityById(input: {
+  workspaceRoot: string;
+  dir: string;
+  id: string;
+  expectedType: "suite" | "case";
+  dryRun: boolean;
+  confirm?: boolean;
+}): Promise<Record<string, unknown>> {
+  const dir = resolvePathInsideWorkspace(input.workspaceRoot, input.dir);
+  const index = await buildIdIndex(dir);
+  const found = resolveById(index, input.id);
+
+  if (!found || found.type !== input.expectedType) {
+    throw new Error(`validation: ${input.expectedType} id not found (${input.id})`);
+  }
+
+  const impacted = index.entities
+    .filter((entity) => entity.related.includes(input.id) && entity.id !== input.id)
+    .map((entity) => ({
+      id: entity.id,
+      type: entity.type,
+      path: toRelativePath(input.workspaceRoot, entity.path)
+    }));
+
+  const plan = {
+    id: found.id,
+    type: found.type,
+    path: toRelativePath(input.workspaceRoot, found.path)
+  };
+
+  if (input.dryRun) {
+    return {
+      deleted: false,
+      dryRun: true,
+      plan,
+      impacted
+    };
+  }
+
+  if (input.confirm !== true) {
+    throw new Error("validation: confirm=true is required when dryRun=false");
+  }
+
+  await unlink(found.path);
+
+  return {
+    deleted: true,
+    dryRun: false,
+    plan,
+    impacted,
+    writtenFiles: [toRelativePath(input.workspaceRoot, found.path)]
+  };
+}
+
+export async function deleteSuiteCore(input: {
+  workspaceRoot: string;
+  dir: string;
+  id: string;
+  dryRun: boolean;
+  confirm?: boolean;
+}): Promise<Record<string, unknown>> {
+  return deleteEntityById({ ...input, expectedType: "suite" });
+}
+
+export async function deleteCaseCore(input: {
+  workspaceRoot: string;
+  dir: string;
+  id: string;
+  dryRun: boolean;
+  confirm?: boolean;
+}): Promise<Record<string, unknown>> {
+  return deleteEntityById({ ...input, expectedType: "case" });
 }

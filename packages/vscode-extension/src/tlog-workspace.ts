@@ -108,6 +108,13 @@ export async function loadTree(rootDir: string): Promise<TreeNodeModel[]> {
         type: "guide",
         path: rootDir,
         description: "Run `tlog init` or create suite index.yaml"
+      },
+      {
+        id: "guide-create-new",
+        label: "Create New",
+        type: "guide",
+        path: rootDir,
+        description: "Create first suite in this root"
       }
     ];
   }
@@ -123,7 +130,7 @@ export async function loadTree(rootDir: string): Promise<TreeNodeModel[]> {
     const parentSuitePath = suitePathSet.has(parentIndex) ? parentIndex : undefined;
     const suiteNode: TreeNodeModel = {
       id: suite.id,
-      label: suiteValidation.ok && suiteValidation.data ? suite.title : `${suite.id} (invalid)`,
+      label: suiteValidation.ok && suiteValidation.data ? `${suite.id}: ${suite.title}` : `${suite.id}: ${suite.title} (invalid)`,
       type: "suite",
       path: suiteFile,
       parentPath: parentSuitePath,
@@ -139,7 +146,7 @@ export async function loadTree(rootDir: string): Promise<TreeNodeModel[]> {
       const status = testCase.status ?? null;
       nodes.push({
         id: testCase.id,
-        label: caseValidation.ok ? testCase.title : `${testCase.id} (invalid)`,
+        label: caseValidation.ok ? `${testCase.id}: ${testCase.title}` : `${testCase.id}: ${testCase.title} (invalid)`,
         type: "case",
         path: caseFile,
         parentPath: suiteFile,
