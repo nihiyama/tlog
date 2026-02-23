@@ -9,7 +9,8 @@
   "license": "SEE LICENSE IN LICENSE.txt",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tlog-dev/tlog.git"
+    "url": "https://github.com/nihiyama/tlog.git",
+    "directory": "packages/vscode-extension"
   },
   "type": "module",
   "engines": {
@@ -180,8 +181,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text",
-    "package:vsix": "vsce package --no-dependencies",
-    "publish:marketplace": "vsce publish --no-dependencies",
+    "package:vsix": "vsce package --no-dependencies --baseContentUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension --baseImagesUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension",
+    "publish:marketplace": "vsce publish --no-dependencies --baseContentUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension --baseImagesUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension",
     "publish:precheck": "npm run typecheck && npm run test && npm run package:vsix"
   },
   "devDependencies": {
