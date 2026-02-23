@@ -1,5 +1,11 @@
 # @tlog/mcp
 
+## 0.1.7
+
+### Patch Changes
+
+- 1e2fa6a: Release MCP server package only.
+
 ## 0.1.6
 
 ### Patch Changes
