@@ -21,9 +21,10 @@
   ],
   "type": "module",
   "bin": {
-    "tlog-mcp": "dist/index.js"
+    "tlog-mcp": "bin/tlog-mcp.js"
   },
   "files": [
+    "bin",
     "dist"
   ],
   "scripts": {
