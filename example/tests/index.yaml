@@ -1,0 +1,24 @@
+id: tests-root
+title: "Example Tests Root Suite"
+tags:
+  - "example"
+  - "all"
+description: "Top-level suite that aggregates all example test suites"
+scoped: true
+owners:
+  - "qa-team"
+duration:
+  scheduled:
+    start: "2026-02-01"
+    end: "2026-02-28"
+  actual:
+    start: "2026-02-01"
+    end: "2026-02-28"
+related:
+  - "suite-01"
+  - "suite-02"
+  - "suite-03"
+  - "suite-04"
+  - "suite-05"
+remarks:
+  - "Root suite for example/tests"

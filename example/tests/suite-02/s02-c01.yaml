@@ -1,0 +1,24 @@
+id: s02-c01
+title: "Case s02-c01: User scenario check"
+tags:
+  - "smoke"
+  - "suite-2"
+description: "End-to-end verification for s02-c01"
+scoped: true
+status: todo
+operations:
+  - "Open target page"
+  - "Execute primary user action"
+  - "Validate visible result"
+related: []
+remarks:
+  - "Generated sample case"
+completedDay: null
+tests:
+  - name: "Main assertion"
+    expected: "Operation completes successfully"
+    actual: "Execution recorded for s02-c01"
+    trails:
+      - "logs/s02-c01.log"
+    status: pass
+issues: []

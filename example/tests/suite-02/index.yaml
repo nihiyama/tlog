@@ -1,0 +1,20 @@
+id: suite-02
+title: "Suite 2: Core Flow Validation"
+tags:
+  - "release-2026q1"
+  - "suite-2"
+description: "Validation suite 2 for representative tlog test operations"
+scoped: true
+owners:
+  - "qa-team"
+  - "owner-2"
+duration:
+  scheduled:
+    start: "2026-02-01"
+    end: "2026-02-28"
+  actual:
+    start: "2026-02-01"
+    end: "2026-02-28"
+related: []
+remarks:
+  - "Generated sample suite for example directory"

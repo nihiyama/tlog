@@ -1,0 +1,37 @@
+id: s05-c01
+title: "Case s05-c01: User scenario check"
+tags:
+  - "smoke"
+  - "suite-5"
+description: "End-to-end verification for s05-c01"
+scoped: true
+status: todo
+operations:
+  - "Open target page"
+  - "Execute primary user action"
+  - "Validate visible result"
+related: []
+remarks:
+  - "Generated sample case"
+completedDay: null
+tests:
+  - name: "Main assertion"
+    expected: "Operation completes successfully"
+    actual: "Execution recorded for s05-c01"
+    trails:
+      - "logs/s05-c01.log"
+    status: pass
+issues:
+  - incident: "Intermittent delay on s05-c01"
+    owners:
+      - "qa-team"
+    causes:
+      - "Backend response variance"
+    solutions:
+      - "Add retry and monitoring"
+    status: open
+    detectedDay: "2026-02-06"
+    completedDay: null
+    related: []
+    remarks:
+      - "Track until stabilized"

@@ -1,0 +1,24 @@
+id: s04-c06
+title: "Case s04-c06: User scenario check"
+tags:
+  - "smoke"
+  - "suite-4"
+description: "End-to-end verification for s04-c06"
+scoped: true
+status: done
+operations:
+  - "Open target page"
+  - "Execute primary user action"
+  - "Validate visible result"
+related: []
+remarks:
+  - "Generated sample case"
+completedDay: "2026-02-06"
+tests:
+  - name: "Main assertion"
+    expected: "Operation completes successfully"
+    actual: "Execution recorded for s04-c06"
+    trails:
+      - "logs/s04-c06.log"
+    status: pass
+issues: []
