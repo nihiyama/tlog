@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.31
+
+### Patch Changes
+
+- df6a599: Release VS Code extension only (`nihiyama.vscode-tlog`).
+
 ## 0.1.30
 
 ### Patch Changes
