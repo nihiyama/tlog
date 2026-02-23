@@ -1,5 +1,11 @@
 # @tlog/mcp
 
+## 0.1.5
+
+### Patch Changes
+
+- e4974e8: Release MCP server package only.
+
 ## 0.1.4
 
 ### Patch Changes
