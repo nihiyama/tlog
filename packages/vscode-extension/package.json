@@ -179,7 +179,7 @@
     "watch": "tsc -p tsconfig.json -w --preserveWatchOutput",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text",
     "package:vsix": "vsce package --no-dependencies",
     "publish:marketplace": "vsce publish --no-dependencies",
     "publish:precheck": "npm run typecheck && npm run test && npm run package:vsix"

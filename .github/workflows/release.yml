@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   release:
@@ -30,8 +31,8 @@ jobs:
 
       - name: Verify before release
         run: |
-          npm run typecheck
           npm run build
+          npm run typecheck
           npm run test
 
       - name: Version or Publish npm packages
@@ -44,7 +45,7 @@ jobs:
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 
       - name: Detect VS Code extension version change
         id: vscode_version
