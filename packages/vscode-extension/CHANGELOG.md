@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.33
+
+### Patch Changes
+
+- 38cbebd: Release VS Code extension only (`nihiyama.vscode-tlog`).
+
 ## 0.1.32
 
 ### Patch Changes
