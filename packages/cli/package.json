@@ -1,6 +1,6 @@
 {
   "name": "@tlog/cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "tlog command line interface",
   "license": "UNLICENSED",
   "repository": {
@@ -33,7 +33,7 @@
     "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text"
   },
   "dependencies": {
-    "@tlog/shared": "0.1.0",
+    "@tlog/shared": "0.1.1",
     "commander": "^14.0.1"
   }
 }
