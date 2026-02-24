@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   MCP_SERVER_NAME,
   MCP_SERVER_VERSION,
@@ -35,6 +36,7 @@ import {
   updateSuiteCore,
   validateTestsDirectoryCore
 } from "../src/index.js";
+import { createCaseFileInputSchema, listCasesInputSchema, validateMutationDraft } from "../src/schemas.js";
 
 describe("MCP server", () => {
   it("creates server instance", () => {
@@ -63,6 +65,49 @@ describe("hasStdioFlag", () => {
     await main(["node", "tlog-mcp"]);
     expect(process.exitCode).toBe(1);
     process.exitCode = prev;
+  });
+});
+
+describe("tool input schemas", () => {
+  it("rejects unknown fields in create_case_file fields payload", () => {
+    const parsed = z.object(createCaseFileInputSchema).safeParse({
+      workspaceRoot: "/workspaces/tlog",
+      dir: "tests/mcp",
+      id: "case-001",
+      title: "Case 001",
+      fields: {
+        status: "doing",
+        unexpectedField: "should-fail"
+      }
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects invalid list_cases status enum", () => {
+    const parsed = z.object(listCasesInputSchema).safeParse({
+      workspaceRoot: "/workspaces/tlog",
+      dir: "tests/mcp",
+      filters: {
+        status: "invalid-status"
+      }
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("preflight validator rejects unknown top-level keys", () => {
+    const result = validateMutationDraft("create_case_file", {
+      workspaceRoot: "/workspaces/tlog",
+      dir: "tests/mcp",
+      id: "case-001",
+      title: "Case 001",
+      write: false,
+      unexpectedTopLevel: true
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.path === "(root)")).toBe(true);
   });
 });
 

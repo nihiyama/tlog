@@ -54,6 +54,7 @@ export interface Issue {
 export interface TestCase {
   id: string;
   title: string;
+  owners: string[];
   tags: string[];
   description: string;
   scoped: boolean;

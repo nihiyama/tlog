@@ -43,6 +43,7 @@ export interface SuiteUpdateOptions {
 export interface CaseUpdateOptions {
   dir: string;
   id: string;
+  owners?: string;
   status?: string;
   tags?: string;
   description?: string;
@@ -193,6 +194,7 @@ export function runCaseUpdate(cwd: string, options: CaseUpdateOptions, globalOpt
   const updated: TestCase = {
     ...current,
     ...(options.description !== undefined ? { description: options.description } : {}),
+    ...(options.owners !== undefined ? { owners: splitCsv(options.owners) } : {}),
     ...(options.tags !== undefined ? { tags: splitCsv(options.tags) } : {}),
     ...(options.operations !== undefined ? { operations: splitCsv(options.operations) } : {}),
     ...(options.related !== undefined ? { related: splitCsv(options.related) } : {}),

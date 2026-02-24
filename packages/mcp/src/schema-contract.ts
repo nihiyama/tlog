@@ -468,9 +468,10 @@ export function getSchemaUsageTemplate(useCase: "create_suite" | "create_case" |
     "Step 1: Call get_tlog_schema(topic) and get_tlog_schema_examples(topic).",
     "Step 2: Build input using only schema-defined fields.",
     "Step 3: Use enum values exactly as declared (case-sensitive).",
-    "Step 4: Call collect_missing_context(operation, draft) before mutation calls.",
-    "Step 5: If missingFields is non-empty, ask user questions and retry.",
-    "Step 6: Run mutation tool with write=false first, then write=true after review."
+    "Step 4: Call preflight_tool_input(operation, draft) before mutation calls.",
+    "Step 5: Call collect_missing_context(operation, draft) for context-heavy operations.",
+    "Step 6: If missingFields or preflight errors are non-empty, ask user questions and retry.",
+    "Step 7: Run mutation tool with write=false first, then write=true after review."
   ];
 
   if (useCase === "create_suite") {

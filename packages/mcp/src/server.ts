@@ -50,6 +50,7 @@ import {
   listSuitesInputSchema,
   listTemplatesInputSchema,
   organizeInputSchema,
+  preflightToolInputSchema,
   resolveEntityPathByIdInputSchema,
   resolveRelatedTargetsInputSchema,
   schemaUsagePromptArgsSchema,
@@ -58,6 +59,7 @@ import {
   suiteStatsInputSchema,
   updateCaseInputSchema,
   updateSuiteInputSchema,
+  validateMutationDraft,
   validateTestsDirectoryInputSchema
 } from "./schemas.js";
 import { logEvent, toToolError, toToolResult } from "./utils.js";
@@ -197,6 +199,40 @@ export function createMcpServer(): McpServer {
         return toToolError("failed to get tlog schema examples", "get_tlog_schema_examples_failed", {
           cause: String(error)
         });
+      }
+    }
+  );
+
+  server.registerTool(
+    "preflight_tool_input",
+    {
+      title: "Preflight tool input",
+      description:
+        "Validate mutation draft against strict tool input schema before write operations. Use this before create/update tools to avoid schema mistakes.",
+      inputSchema: preflightToolInputSchema
+    },
+    async (args) => {
+      try {
+        const validation = validateMutationDraft(args.operation, args.draft);
+        const missingContextResult =
+          args.operation === "create_suite_from_prompt" || args.operation === "create_testcase_from_prompt"
+            ? collectMissingContext(args.operation as MissingContextOperation, args.draft)
+            : { missingFields: [], questions: [], nextAction: "Context check not required for this operation." };
+
+        return toToolResult({
+          operation: args.operation,
+          valid: validation.valid,
+          errors: validation.errors,
+          normalizedDraft: validation.normalizedDraft,
+          missingFields: missingContextResult.missingFields,
+          questions: missingContextResult.questions,
+          nextAction:
+            validation.valid && missingContextResult.missingFields.length === 0
+              ? "Preflight passed. You can run mutation with write=false, then write=true."
+              : "Fix schema/context issues and run preflight_tool_input again."
+        });
+      } catch (error) {
+        return toToolError("failed to preflight tool input", "preflight_tool_input_failed", { cause: String(error) });
       }
     }
   );

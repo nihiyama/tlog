@@ -17,6 +17,7 @@ export interface BuildDefaultCaseInput {
   id: string;
   title: string;
   description?: string;
+  owners?: string[];
   scoped?: boolean;
   status?: TestCaseStatus;
   tags?: string[];
@@ -66,6 +67,7 @@ export function buildDefaultCase(input: BuildDefaultCaseInput): TestCase {
   const candidate: TestCase = {
     id: input.id,
     title: input.title,
+    owners: input.owners ?? [],
     tags: input.tags ?? [],
     description: input.description ?? "",
     scoped: input.scoped ?? true,

@@ -212,8 +212,8 @@ tlog list templates --dir templates --format text
 
 ### Case commands
 
-- `tlog case create --suite-dir <dir> --id <id> --title <title> [--status <todo|doing|done|null>] [--tags <a,b>]`
-- `tlog case update --id <id> [--dir <dir>] [--status <todo|doing|done|null>] [--tags <a,b>] [--description <text>] [--operations <a,b>] [--related <a,b>] [--remarks <a,b>] [--scoped <true|false>] [--completed-day <YYYY-MM-DD|null>] [--tests-file <path>] [--issues-file <path>]`
+- `tlog case create --suite-dir <dir> --id <id> --title <title> [--owners <a,b>] [--status <todo|doing|done|null>] [--tags <a,b>]`
+- `tlog case update --id <id> [--dir <dir>] [--owners <a,b>] [--status <todo|doing|done|null>] [--tags <a,b>] [--description <text>] [--operations <a,b>] [--related <a,b>] [--remarks <a,b>] [--scoped <true|false>] [--completed-day <YYYY-MM-DD|null>] [--tests-file <path>] [--issues-file <path>]`
 - `tlog case delete --id <id> [--dir <dir>] [--yes]`
 - `tlog case list [--dir <dir>] [--id <pattern>] [--tag <tag>] [--owners <a,b>] [--scoped-only] [--issue-has <keyword>] [--issue-status <open|doing|resolved|pending>] [--status <todo|doing|done|null>] [--format <text|json|csv>] [--output <path>]`
 

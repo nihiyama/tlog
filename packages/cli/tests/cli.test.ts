@@ -145,6 +145,8 @@ describe("tlog cli", () => {
       "case-1",
       "--title",
       "Login Success",
+      "--owners",
+      "qa-team",
       "--status",
       "doing"
     ]);
@@ -152,6 +154,7 @@ describe("tlog cli", () => {
     expect(result.exitCode).toBe(0);
     const file = readFileSync(join(suiteDir, "case-1.testcase.yaml"), "utf8");
     expect(file).toContain("id: case-1");
+    expect(file).toContain("- qa-team");
     expect(file).toContain("status: doing");
   });
 
@@ -218,12 +221,19 @@ describe("tlog cli", () => {
       "tests",
       "--id",
       "case-a",
+      "--owners",
+      "qa,ops",
       "--issues-file",
       issuesFile,
       "--json"
     ]);
     expect(result.exitCode).toBe(0);
     const caseRaw = readFileSync(join(suiteDir, "case-a.testcase.yaml"), "utf8");
+    expect(caseRaw).toContain("owners:");
+    expect(caseRaw).toContain("- qa");
+    expect(caseRaw).toContain("- ops");
+    expect(caseRaw).toContain("incident: incident-a");
+    expect(caseRaw).toContain("    owners:");
     expect(caseRaw).toContain("detectedDay: 2026-02-20");
     expect(caseRaw).toContain("completedDay: null");
   });

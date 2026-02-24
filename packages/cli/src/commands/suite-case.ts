@@ -32,6 +32,7 @@ export interface CaseCreateOptions {
   suiteDir: string;
   id: string;
   title: string;
+  owners?: string;
   status?: string;
   tags?: string;
 }
@@ -118,6 +119,7 @@ export function runCaseCreate(cwd: string, options: CaseCreateOptions, globalOpt
   const testCase = buildDefaultCase({
     id: options.id,
     title: options.title,
+    owners: splitCsv(options.owners),
     status: status === null ? undefined : status,
     tags: splitCsv(options.tags)
   });

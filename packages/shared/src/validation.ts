@@ -69,6 +69,7 @@ function buildSuiteWarnings(suite: Suite): ValidationDiagnostic[] {
 function buildCaseWarnings(testCase: TestCase): ValidationDiagnostic[] {
   const warnings: ValidationDiagnostic[] = [];
 
+  pushArrayWarnings(warnings, testCase.owners, "owners", "owners is empty");
   pushArrayWarnings(warnings, testCase.tags, "tags", "tags is empty");
   pushArrayWarnings(warnings, testCase.operations, "operations", "operations is empty");
   pushArrayWarnings(warnings, testCase.tests, "tests", "tests is empty");
