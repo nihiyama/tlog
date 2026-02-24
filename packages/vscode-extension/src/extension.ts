@@ -68,6 +68,7 @@ type ManagerMessage =
       title: string;
       description: string;
       tags: string;
+      owners: string;
       scoped: boolean;
       status: "todo" | "doing" | "done" | null;
       operations: string[];
@@ -372,6 +373,7 @@ async function openManager(
               title: message.title,
               description: message.description,
               tags: splitCsv(message.tags),
+              owners: splitCsv(message.owners),
               scoped: message.scoped,
               status: message.status,
               operations: message.operations,
@@ -382,6 +384,7 @@ async function openManager(
               tests: message.tests,
               issues: message.issues.map((issue) => ({
                 ...issue,
+                owners: Array.isArray(issue.owners) ? issue.owners : [],
                 related: normalizeRelatedRefs(issue.related ?? [], relatedOptions),
                 remarks: issue.remarks ?? []
               }))

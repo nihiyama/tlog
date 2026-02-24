@@ -127,6 +127,7 @@ function createProgram(): Command {
     .requiredOption("--suite-dir <dir>", "target suite directory")
     .requiredOption("--id <caseId>", "case id")
     .requiredOption("--title <caseTitle>", "case title")
+    .option("--owners <a,b,c>", "owners list")
     .option("--status <todo|doing|done|null>", "case status")
     .option("--tags <a,b,c>", "tags list")
     .action((options: CaseCreateOptions, command: Command) => {
@@ -138,6 +139,7 @@ function createProgram(): Command {
     .description("Update case YAML by id")
     .requiredOption("--id <caseId>", "case id")
     .option("--dir <dir>", "search root directory", "tests")
+    .option("--owners <a,b,c>", "case owners")
     .option("--status <todo|doing|done|null>", "case status")
     .option("--tags <a,b,c>", "case tags")
     .option("--description <text>", "case description")

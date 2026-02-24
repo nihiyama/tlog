@@ -1162,7 +1162,7 @@ export function managerHtml(): string {
           '<div class="field"><label>issues</label><div><div data-role="issuesList"></div><button data-role="addIssue" class="secondary" type="button" style="margin-top:6px;">Add Issue</button></div></div>' +
           '';
         const ops = createNumberedList(card.querySelector('[data-role="operationsList"]'), testCase.operations || []);
-        createChipEditor(card.querySelector('[data-role="ownersEditor"]'), testCase.suiteOwners || []);
+        const ownersEditor = createChipEditor(card.querySelector('[data-role="ownersEditor"]'), testCase.owners || []);
         const tagsEditor = createChipEditor(card.querySelector('[data-role="tagsEditor"]'), testCase.tags || []);
         card.querySelector('[data-role="addOp"]').addEventListener('click', () => ops.add(''));
         const testsEditor = createTestsEditor(card, testCase.tests || []);
@@ -1184,6 +1184,7 @@ export function managerHtml(): string {
             title: card.querySelector('[data-role="title"]').value,
             description: card.querySelector('[data-role="description"]').value,
             tags: tagsEditor.getValues().join(','),
+            owners: ownersEditor.getValues().join(','),
             scoped: card.querySelector('[data-role="scoped"]').checked,
             status: card.querySelector('[data-role="status"]').value || null,
             operations: ops.values(),

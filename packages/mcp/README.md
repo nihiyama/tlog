@@ -147,10 +147,11 @@ A robust workflow (inspired by production-grade MCP servers):
 
 1. `get_tlog_schema` (topic: `all` or specific).
 2. `get_tlog_schema_examples` for concrete payload patterns.
-3. `collect_missing_context` before mutation.
-4. Mutation tools with `write=false` first.
-5. Apply with `write=true`.
-6. `validate_tests_directory` to verify final consistency.
+3. `preflight_tool_input` before mutation (strict schema check).
+4. `collect_missing_context` before mutation (context completeness check).
+5. Mutation tools with `write=false` first.
+6. Apply with `write=true`.
+7. `validate_tests_directory` to verify final consistency.
 
 ## Feature Overview
 
@@ -174,6 +175,7 @@ Tools:
 
 - `get_tlog_schema`
 - `get_tlog_schema_examples`
+- `preflight_tool_input`
 - `collect_missing_context`
 
 ## 2) Authoring and Mutation
@@ -227,6 +229,7 @@ For quick scanning, here is the complete tool set currently registered by this s
 
 - `get_tlog_schema`
 - `get_tlog_schema_examples`
+- `preflight_tool_input`
 - `collect_missing_context`
 - `create_suite_from_prompt`
 - `create_testcase_from_prompt`

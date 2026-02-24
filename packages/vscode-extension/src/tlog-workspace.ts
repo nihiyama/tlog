@@ -47,6 +47,7 @@ export interface CaseCard {
   scoped: boolean;
   status: TestCase["status"];
   description: string;
+  owners: string[];
   tags: string[];
   suiteId?: string;
   suiteOwners: string[];
@@ -205,7 +206,18 @@ export async function updateCase(
   path: string,
   patch: Pick<
     TestCase,
-    "title" | "description" | "tags" | "scoped" | "status" | "operations" | "related" | "remarks" | "completedDay" | "tests" | "issues"
+    | "title"
+    | "description"
+    | "owners"
+    | "tags"
+    | "scoped"
+    | "status"
+    | "operations"
+    | "related"
+    | "remarks"
+    | "completedDay"
+    | "tests"
+    | "issues"
   >
 ): Promise<void> {
   const current = await readYamlFile<TestCase>(path);
@@ -213,6 +225,7 @@ export async function updateCase(
     ...current,
     title: patch.title,
     description: patch.description,
+    owners: patch.owners,
     tags: patch.tags,
     scoped: patch.scoped,
     status: patch.status,
@@ -353,6 +366,7 @@ export async function getWorkspaceSnapshot(rootDir: string, filters: SearchFilte
         scoped: testCase.scoped,
         status: testCase.status,
         description: testCase.description,
+        owners: testCase.owners,
         tags: testCase.tags,
         suiteId: nodes.find((candidate) => candidate.type === "suite" && candidate.path === node.parentPath)?.id
         ,
@@ -378,6 +392,7 @@ function casesToTestCase(cases: CaseCard[]): TestCase[] {
   return cases.map((item) => ({
     id: item.id,
     title: item.title,
+    owners: item.owners,
     tags: item.tags,
     description: item.description,
     scoped: item.scoped,

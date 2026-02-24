@@ -32,7 +32,7 @@ export const suiteSchema = z
     tags: stringArraySchema,
     description: z.string(),
     scoped: z.boolean(),
-    owners: stringArraySchema,
+    owners: stringArraySchema.default([]),
     duration: durationSchema,
     related: stringArraySchema,
     remarks: stringArraySchema
@@ -69,7 +69,7 @@ export const issueSchema = z
   }, z
     .object({
       incident: nonEmptyStringSchema,
-      owners: stringArraySchema,
+      owners: stringArraySchema.default([]),
       causes: stringArraySchema,
       solutions: stringArraySchema,
       status: issueStatusSchema,
@@ -84,6 +84,7 @@ export const testCaseSchema = z
   .object({
     id: nonEmptyStringSchema,
     title: nonEmptyStringSchema,
+    owners: stringArraySchema.default([]),
     tags: stringArraySchema,
     description: z.string(),
     scoped: z.boolean(),
