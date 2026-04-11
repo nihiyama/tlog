@@ -379,16 +379,17 @@ export async function getWorkspaceSnapshot(rootDir: string, filters: SearchFilte
     }
   }
 
-  const filtered = Object.keys(filters).length > 0 ? filterEntities(casesToTestCase(cases), filters).items : casesToTestCase(cases);
-  const allowed = new Set(filtered.map((item) => item.id));
+  const caseEntities = casesToTestCase(cases);
+  const filtered = Object.keys(filters).length > 0 ? filterEntities(caseEntities, filters).items : caseEntities;
+  const allowedPaths = new Set(filtered.map((item) => item.path));
 
   return {
     suites,
-    cases: cases.filter((item) => allowed.has(item.id))
+    cases: cases.filter((item) => allowedPaths.has(item.path))
   };
 }
 
-function casesToTestCase(cases: CaseCard[]): TestCase[] {
+function casesToTestCase(cases: CaseCard[]): Array<TestCase & { path: string }> {
   return cases.map((item) => ({
     id: item.id,
     title: item.title,
@@ -402,6 +403,7 @@ function casesToTestCase(cases: CaseCard[]): TestCase[] {
     remarks: [],
     completedDay: asTlogDateString("1970-01-01"),
     tests: [],
-    issues: []
+    issues: [],
+    path: item.path
   }));
 }

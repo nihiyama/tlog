@@ -74,7 +74,8 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
         filters.owners.length > 0 ||
         filters.testcaseStatus.length > 0 ||
         filters.issueHas.length > 0 ||
-        filters.issueStatus.length > 0
+        filters.issueStatus.length > 0 ||
+        filters.scopedOnly
       ) {
         const searchFilters: SearchFilters = {};
         if (filters.tags.length > 0) {
@@ -82,9 +83,11 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
         }
 
         const snapshot = await getWorkspaceSnapshot(this.rootDirectory, searchFilters);
-        const allowedCaseIds = new Set(snapshot.cases.filter((item) => matchCaseWithFilters(item, filters)).map((item) => item.id));
+        const allowedCasePaths = new Set(
+          snapshot.cases.filter((item) => matchCaseWithFilters(item, filters)).map((item) => item.path)
+        );
 
-        nodes = nodes.filter((node) => node.type !== "case" || allowedCaseIds.has(node.id));
+        nodes = nodes.filter((node) => node.type !== "case" || allowedCasePaths.has(node.path));
       }
 
       this.nodes = nodes;

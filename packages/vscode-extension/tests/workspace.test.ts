@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createCase, createSuite, findSuiteFiles, loadTree } from "../src/tlog-workspace.js";
+import { createCase, createSuite, findSuiteFiles, getWorkspaceSnapshot, loadTree } from "../src/tlog-workspace.js";
 
 const IS_COVERAGE_RUN = process.env.VITEST_COVERAGE === "true" || process.env.npm_lifecycle_event === "test:coverage";
 const PERF_THRESHOLD_MS = IS_COVERAGE_RUN ? 4500 : 2000;
@@ -120,5 +120,73 @@ describe("tlog workspace", () => {
 
     expect(tree.filter((node) => node.type === "case")).toHaveLength(1000);
     expect(elapsed).toBeLessThan(PERF_THRESHOLD_MS);
+  });
+
+  it("filters snapshot cases by path even when IDs are duplicated", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tlog-vscode-snapshot-"));
+    mkdirSync(join(root, "tests", "a"), { recursive: true });
+    mkdirSync(join(root, "tests", "b"), { recursive: true });
+
+    const suiteYaml = [
+      "id: suite-root",
+      "title: Root",
+      "tags: []",
+      "description: root",
+      "scoped: true",
+      "owners: []",
+      "duration:",
+      "  scheduled: { start: 2026-02-01, end: 2026-02-10 }",
+      "  actual: { start: 2026-02-01, end: 2026-02-10 }",
+      "related: []",
+      "remarks: []",
+      ""
+    ].join("\n");
+
+    writeFileSync(join(root, "tests", "a", "index.yaml"), suiteYaml, "utf8");
+    writeFileSync(join(root, "tests", "b", "index.yaml"), suiteYaml.replace("suite-root", "suite-root-b"), "utf8");
+
+    writeFileSync(
+      join(root, "tests", "a", "case-dup.yaml"),
+      [
+        "id: case-dup",
+        "title: Case A",
+        "tags: [smoke]",
+        "description: case",
+        "scoped: true",
+        "status: todo",
+        "operations: []",
+        "related: []",
+        "remarks: []",
+        "completedDay: 2026-02-02",
+        "tests: []",
+        "issues: []",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+
+    writeFileSync(
+      join(root, "tests", "b", "case-dup.yaml"),
+      [
+        "id: case-dup",
+        "title: Case B",
+        "tags: [regression]",
+        "description: case",
+        "scoped: true",
+        "status: todo",
+        "operations: []",
+        "related: []",
+        "remarks: []",
+        "completedDay: 2026-02-02",
+        "tests: []",
+        "issues: []",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+
+    const snapshot = await getWorkspaceSnapshot(root, { tags: ["smoke"] });
+    expect(snapshot.cases).toHaveLength(1);
+    expect(snapshot.cases[0]?.path.endsWith("tests/a/case-dup.yaml")).toBe(true);
   });
 });
