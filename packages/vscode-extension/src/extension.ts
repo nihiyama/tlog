@@ -188,11 +188,14 @@ async function postSnapshot(
           suiteTags: selectedCaseCard.suiteId ? (suiteById.get(selectedCaseCard.suiteId)?.tags ?? []) : []
         } as TestCase & { path: string; suiteId?: string; suiteOwners: string[]; suiteTags: string[] })
       : null;
+  const filteredCasePaths = new Set(filteredCases.map((item) => item.path));
   const suiteCases =
     selection?.type === "suite" && selectedSuiteCard
       ? await Promise.all(
           allSnapshot.cases
-            .filter((item) => isPathInside(dirname(selectedSuiteCard.path), item.path))
+            .filter(
+              (item) => isPathInside(dirname(selectedSuiteCard.path), item.path) && filteredCasePaths.has(item.path)
+            )
             .map(async (item) => ({
               ...parseYaml<TestCase>(await readFile(item.path, "utf8")),
               path: item.path,
