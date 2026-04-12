@@ -1,6 +1,6 @@
 {
   "name": "@tlog/mcp",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "tlog MCP server",
   "license": "UNLICENSED",
   "repository": {
@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "@tlog/shared": "0.1.1",
+    "@tlog/shared": "0.2.0",
     "zod": "^3.25.76"
   }
 }
