@@ -67,8 +67,8 @@ export function buildDefaultCase(input: BuildDefaultCaseInput): TestCase {
   const candidate: TestCase = {
     id: input.id,
     title: input.title,
-    owners: input.owners ?? [],
     tags: input.tags ?? [],
+    owners: input.owners ?? [],
     description: input.description ?? "",
     scoped: input.scoped ?? true,
     status: input.status ?? "todo",

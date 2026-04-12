@@ -53,6 +53,7 @@ export interface CaseCard {
   suiteOwners: string[];
   issueCount: number;
   issueStatuses: string[];
+  issueOwners: string[];
   scheduledStart?: string;
   scheduledEnd?: string;
 }
@@ -221,12 +222,12 @@ export async function updateCase(
   >
 ): Promise<void> {
   const current = await readYamlFile<TestCase>(path);
-  const updated: TestCase = {
+  const merged: TestCase = {
     ...current,
     title: patch.title,
     description: patch.description,
-    owners: patch.owners,
     tags: patch.tags,
+    owners: patch.owners,
     scoped: patch.scoped,
     status: patch.status,
     operations: patch.operations,
@@ -235,6 +236,22 @@ export async function updateCase(
     completedDay: patch.completedDay,
     tests: patch.tests,
     issues: patch.issues
+  };
+
+  const updated: TestCase = {
+    id: merged.id,
+    title: merged.title,
+    tags: merged.tags,
+    owners: merged.owners,
+    description: merged.description,
+    scoped: merged.scoped,
+    status: merged.status,
+    operations: merged.operations,
+    related: merged.related,
+    remarks: merged.remarks,
+    completedDay: merged.completedDay,
+    tests: merged.tests,
+    issues: merged.issues
   };
 
   const validation = validateCase(updated);
@@ -368,27 +385,28 @@ export async function getWorkspaceSnapshot(rootDir: string, filters: SearchFilte
         description: testCase.description,
         owners: testCase.owners,
         tags: testCase.tags,
-        suiteId: nodes.find((candidate) => candidate.type === "suite" && candidate.path === node.parentPath)?.id
-        ,
+        suiteId: nodes.find((candidate) => candidate.type === "suite" && candidate.path === node.parentPath)?.id,
         suiteOwners: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.owners : [],
         issueCount: testCase.issues.length,
         issueStatuses: Array.from(new Set(testCase.issues.map((issue) => issue.status))),
+        issueOwners: Array.from(new Set(testCase.issues.flatMap((issue) => issue.owners ?? []))),
         scheduledStart: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.duration.scheduled.start : undefined,
         scheduledEnd: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.duration.scheduled.end : undefined
       });
     }
   }
 
-  const filtered = Object.keys(filters).length > 0 ? filterEntities(casesToTestCase(cases), filters).items : casesToTestCase(cases);
-  const allowed = new Set(filtered.map((item) => item.id));
+  const caseEntities = casesToTestCase(cases);
+  const filtered = Object.keys(filters).length > 0 ? filterEntities(caseEntities, filters).items : caseEntities;
+  const allowedPaths = new Set(filtered.map((item) => item.path));
 
   return {
     suites,
-    cases: cases.filter((item) => allowed.has(item.id))
+    cases: cases.filter((item) => allowedPaths.has(item.path))
   };
 }
 
-function casesToTestCase(cases: CaseCard[]): TestCase[] {
+function casesToTestCase(cases: CaseCard[]): Array<TestCase & { path: string }> {
   return cases.map((item) => ({
     id: item.id,
     title: item.title,
@@ -402,6 +420,7 @@ function casesToTestCase(cases: CaseCard[]): TestCase[] {
     remarks: [],
     completedDay: asTlogDateString("1970-01-01"),
     tests: [],
-    issues: []
+    issues: [],
+    path: item.path
   }));
 }

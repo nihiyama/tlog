@@ -36,6 +36,8 @@ describe("filters helpers", () => {
       scoped: true,
       status: "doing" as const,
       suiteOwners: ["qa", "dev"],
+      owners: ["case-owner"],
+      issueOwners: ["issue-owner"],
       issueCount: 1,
       issueStatuses: ["open", "doing"]
     };
@@ -48,6 +50,28 @@ describe("filters helpers", () => {
         testcaseStatus: ["doing"],
         issueHas: ["has"],
         issueStatus: ["open"]
+      })
+    ).toBe(true);
+
+    expect(
+      matchCaseWithFilters(item, {
+        scopedOnly: false,
+        tags: [],
+        owners: ["case-owner"],
+        testcaseStatus: [],
+        issueHas: [],
+        issueStatus: []
+      })
+    ).toBe(true);
+
+    expect(
+      matchCaseWithFilters(item, {
+        scopedOnly: false,
+        tags: [],
+        owners: ["issue-owner"],
+        testcaseStatus: [],
+        issueHas: [],
+        issueStatus: []
       })
     ).toBe(true);
 
@@ -136,6 +160,10 @@ describe("webviews html", () => {
     expect(html).toContain("Advanced filters");
     expect(html).toContain("Clear all filters");
     expect(html).toContain('id="activeFilters"');
+    expect(html).toContain("applyOnEnter");
+    expect(html).toContain("tagsEl.addEventListener(\"keydown\", applyOnEnter)");
+    expect(html).toContain("ownersEl.addEventListener(\"keydown\", applyOnEnter)");
+    expect(html).toContain("bindEnterToChecks(statusSelect)");
   });
 
   it("contains manager sections", () => {
@@ -143,5 +171,9 @@ describe("webviews html", () => {
     expect(html).toContain("Suite Burndown");
     expect(html).toContain("Case Editor");
     expect(html).toContain("saveState");
+    expect(html).toContain("chartTooltip");
+    expect(html).toContain("deriveCaseDraftFields");
+    expect(html).toContain("allTestsPass");
+    expect(html).toContain("statusEl.value = 'done'");
   });
 });

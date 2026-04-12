@@ -188,11 +188,14 @@ async function postSnapshot(
           suiteTags: selectedCaseCard.suiteId ? (suiteById.get(selectedCaseCard.suiteId)?.tags ?? []) : []
         } as TestCase & { path: string; suiteId?: string; suiteOwners: string[]; suiteTags: string[] })
       : null;
+  const filteredCasePaths = new Set(filteredCases.map((item) => item.path));
   const suiteCases =
     selection?.type === "suite" && selectedSuiteCard
       ? await Promise.all(
           allSnapshot.cases
-            .filter((item) => isPathInside(dirname(selectedSuiteCard.path), item.path))
+            .filter(
+              (item) => isPathInside(dirname(selectedSuiteCard.path), item.path) && filteredCasePaths.has(item.path)
+            )
             .map(async (item) => ({
               ...parseYaml<TestCase>(await readFile(item.path, "utf8")),
               path: item.path,
@@ -699,6 +702,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await openManager(vscodeApi, context, provider, node, async (path: string) => {
         await revealOrClearFilters(path);
       });
+    })
+  );
+
+  context.subscriptions.push(
+    vscodeApi.commands.registerCommand("tlog.expandAllSuites", async () => {
+      await provider.refresh();
+      const suites = provider.getNodes().filter((node) => node.type === "suite");
+      for (const suite of suites) {
+        await tree.reveal(suite, { select: false, focus: false, expand: true });
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscodeApi.commands.registerCommand("tlog.collapseAllSuites", async () => {
+      await vscodeApi.commands.executeCommand("workbench.actions.treeView.tlog.tree.collapseAll");
     })
   );
 

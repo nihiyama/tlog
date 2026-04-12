@@ -5,80 +5,115 @@ export function controlsHtml(): string {
     <meta charset="utf-8" />
     <style>
       * { box-sizing: border-box; }
+      :root {
+        --accent: var(--vscode-textLink-foreground);
+        --accent-soft: color-mix(in srgb, var(--vscode-textLink-foreground) 24%, transparent);
+        --surface: color-mix(in srgb, var(--vscode-editorWidget-background) 86%, transparent);
+        --surface-edge: color-mix(in srgb, var(--vscode-editorWidget-border) 84%, transparent);
+      }
       body {
         font-family: var(--vscode-font-family);
         color: var(--vscode-foreground);
-        background: var(--vscode-sideBar-background);
+        background:
+          radial-gradient(120% 80% at 100% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 65%),
+          radial-gradient(110% 90% at -10% 110%, color-mix(in srgb, var(--vscode-charts-orange) 18%, transparent), transparent 68%),
+          var(--vscode-sideBar-background);
         margin: 0;
-        padding: 10px;
+        padding: 12px;
+        line-height: 1.35;
       }
       .box {
-        border: 1px solid var(--vscode-editorWidget-border);
-        border-radius: 6px;
-        padding: 10px;
+        border: 1px solid var(--surface-edge);
+        border-radius: 12px;
+        padding: 12px;
         margin-bottom: 10px;
-        background: var(--vscode-editorWidget-background);
+        background: linear-gradient(160deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16), inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent);
       }
-      .row { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
-      .field { margin-top: 8px; }
+      .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+      .field { margin-top: 10px; }
       .label {
         display: inline-block;
         font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
         opacity: 0.9;
-        margin-bottom: 4px;
+        margin-bottom: 5px;
       }
       .searchRow {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 7px;
         border: 1px solid var(--vscode-input-border);
-        border-radius: 4px;
-        padding: 4px 6px;
-        background: var(--vscode-input-background);
+        border-radius: 8px;
+        padding: 6px 8px;
+        background: color-mix(in srgb, var(--vscode-input-background) 92%, transparent);
+        transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
       }
-      .searchIcon { width: 14px; height: 14px; opacity: 0.8; }
+      .searchRow:focus-within {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent-soft);
+        transform: translateY(-1px);
+      }
+      .searchIcon { width: 14px; height: 14px; opacity: 0.88; }
       input {
         width: 100%;
         min-width: 0;
-        padding: 4px 6px;
+        padding: 6px 8px;
         border: 1px solid var(--vscode-input-border);
-        border-radius: 4px;
-        background: var(--vscode-input-background);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--vscode-input-background) 92%, transparent);
         color: var(--vscode-input-foreground);
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+      input:focus-visible {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent-soft);
       }
       .searchRow input { border: none; padding: 0; background: transparent; }
+      .searchRow input:focus-visible { box-shadow: none; }
       button {
-        border: 1px solid var(--vscode-button-border, transparent);
-        border-radius: 4px;
-        padding: 3px 8px;
+        border: 1px solid color-mix(in srgb, var(--vscode-button-background) 40%, var(--surface-edge));
+        border-radius: 999px;
+        padding: 5px 10px;
         cursor: pointer;
-        background: var(--vscode-button-background);
+        background: linear-gradient(180deg, color-mix(in srgb, var(--vscode-button-background) 92%, white 8%), var(--vscode-button-background));
         color: var(--vscode-button-foreground);
+        transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
       }
+      button:hover {
+        transform: translateY(-1px);
+        filter: saturate(1.08);
+      }
+      button:active { transform: translateY(0); }
       button.secondary {
-        background: var(--vscode-button-secondaryBackground);
+        background: linear-gradient(180deg, color-mix(in srgb, var(--vscode-button-secondaryBackground) 94%, white 6%), var(--vscode-button-secondaryBackground));
         color: var(--vscode-button-secondaryForeground);
       }
       button.ghost {
-        background: transparent;
+        background: color-mix(in srgb, var(--surface) 72%, transparent);
         color: var(--vscode-foreground);
         border-color: var(--vscode-input-border);
       }
       details {
-        margin-top: 8px;
+        margin-top: 10px;
         border: 1px solid var(--vscode-input-border);
-        border-radius: 4px;
+        border-radius: 10px;
+        overflow: hidden;
+        background: color-mix(in srgb, var(--surface) 88%, transparent);
       }
       summary {
         cursor: pointer;
         list-style: none;
-        padding: 6px 8px;
+        padding: 8px 10px;
         font-size: 12px;
+        font-weight: 600;
       }
       summary::-webkit-details-marker { display: none; }
       .detailsBody {
         border-top: 1px solid var(--vscode-input-border);
-        padding: 8px;
+        padding: 9px;
       }
       .chips {
         display: flex;
@@ -89,13 +124,13 @@ export function controlsHtml(): string {
       .chip {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
-        border-radius: 10px;
-        border: 1px solid var(--vscode-badge-background);
-        background: var(--vscode-badge-background);
+        gap: 5px;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--vscode-badge-background) 70%, var(--surface-edge));
+        background: linear-gradient(180deg, color-mix(in srgb, var(--vscode-badge-background) 88%, white 10%), var(--vscode-badge-background));
         color: var(--vscode-badge-foreground);
         font-size: 11px;
-        padding: 1px 6px;
+        padding: 2px 7px;
       }
       .chip button {
         border: none;
@@ -114,41 +149,46 @@ export function controlsHtml(): string {
       }
       .multiPanel {
         position: absolute;
-        top: calc(100% + 4px);
+        top: calc(100% + 6px);
         left: 0;
         right: 0;
         z-index: 20;
-        background: var(--vscode-editorWidget-background);
-        border: 1px solid var(--vscode-editorWidget-border);
-        border-radius: 4px;
-        padding: 6px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+        background: color-mix(in srgb, var(--vscode-editorWidget-background) 92%, transparent);
+        border: 1px solid var(--surface-edge);
+        border-radius: 10px;
+        padding: 8px;
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
       }
       .multiPanel.hidden { display: none; }
       .multiPanelBody {
         border: 1px solid var(--vscode-input-border);
-        border-radius: 4px;
-        padding: 6px;
-        max-height: 150px;
+        border-radius: 8px;
+        padding: 7px;
+        max-height: 170px;
         overflow: auto;
-        background: var(--vscode-input-background);
+        background: color-mix(in srgb, var(--vscode-input-background) 90%, transparent);
       }
       .multiOption {
         display: flex;
         align-items: center;
         justify-content: flex-start;
-        gap: 6px;
-        margin: 0 0 4px 0;
+        gap: 7px;
+        margin: 0 0 5px 0;
         font-size: 12px;
         line-height: 1.2;
         text-align: left;
         width: 100%;
       }
       .multiOption:last-child { margin-bottom: 0; }
-      .multiOption input[type="checkbox"] { margin: 0; width: 14px; height: 14px; flex: 0 0 auto; }
+      .multiOption input[type="checkbox"] { margin: 0; width: 14px; height: 14px; flex: 0 0 auto; accent-color: var(--accent); }
       .multiOption span { display: inline-block; text-align: left; white-space: nowrap; }
-      .caret { font-size: 10px; opacity: 0.8; }
-      #status { font-size: 11px; opacity: 0.9; margin-top: 6px; min-height: 16px; }
+      .caret { font-size: 10px; opacity: 0.85; }
+      #status { font-size: 11px; opacity: 0.92; margin-top: 7px; min-height: 16px; }
+      .box { animation: riseIn 220ms ease both; }
+      @keyframes riseIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
     </style>
   </head>
   <body>
@@ -298,6 +338,16 @@ export function controlsHtml(): string {
       const postApply = () => {
         vscode.postMessage({ type: "applySearch", ...currentFilterState() });
       };
+      const applyOnEnter = (event) => {
+        if (event.key !== "Enter" || event.isComposing) {
+          return;
+        }
+        event.preventDefault();
+        postApply();
+      };
+      const bindEnterToChecks = (root) => {
+        getChecks(root).forEach((el) => el.addEventListener("keydown", applyOnEnter));
+      };
       const refreshTrigger = (root, trigger, fallback) => {
         const picked = selectedValues(root);
         const label = trigger.querySelector('[data-role="triggerLabel"]');
@@ -378,6 +428,9 @@ export function controlsHtml(): string {
       bindMulti(statusTrigger, statusPanel, statusSelect, "Select status");
       bindMulti(issueHasTrigger, issueHasPanel, issueHasSelect, "Select issue presence");
       bindMulti(issueStatusTrigger, issueStatusPanel, issueStatusSelect, "Select issue status");
+      bindEnterToChecks(statusSelect);
+      bindEnterToChecks(issueHasSelect);
+      bindEnterToChecks(issueStatusSelect);
       document.addEventListener("click", () => closeAllPanels());
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
@@ -386,8 +439,11 @@ export function controlsHtml(): string {
         }
       });
       scopedOnlyEl.addEventListener("change", renderActiveFilters);
+      scopedOnlyEl.addEventListener("keydown", applyOnEnter);
       tagsEl.addEventListener("input", renderActiveFilters);
+      tagsEl.addEventListener("keydown", applyOnEnter);
       ownersEl.addEventListener("input", renderActiveFilters);
+      ownersEl.addEventListener("keydown", applyOnEnter);
       advancedFiltersEl.addEventListener("toggle", closeAllPanels);
 
       document.getElementById("setRoot").addEventListener("click", () => {
@@ -434,36 +490,53 @@ export function managerHtml(): string {
     <meta charset="utf-8" />
     <style>
       * { box-sizing: border-box; }
+      :root {
+        --accent: var(--vscode-textLink-foreground);
+        --accent-soft: color-mix(in srgb, var(--vscode-textLink-foreground) 22%, transparent);
+        --surface: color-mix(in srgb, var(--vscode-editorWidget-background) 90%, transparent);
+        --surface-edge: color-mix(in srgb, var(--vscode-editorWidget-border) 88%, transparent);
+      }
       body {
         font-family: var(--vscode-font-family);
         color: var(--vscode-foreground);
         margin: 0;
         padding: 12px;
-        background: var(--vscode-editor-background);
+        background:
+          radial-gradient(95% 85% at 102% -8%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 65%),
+          radial-gradient(90% 80% at -12% 108%, color-mix(in srgb, var(--vscode-charts-green) 12%, transparent), transparent 70%),
+          var(--vscode-editor-background);
       }
       .panel {
-        background: var(--vscode-editorWidget-background);
-        border: 1px solid var(--vscode-editorWidget-border);
-        border-radius: 8px;
+        background: linear-gradient(160deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
+        border: 1px solid var(--surface-edge);
+        border-radius: 12px;
         padding: 12px;
         margin-bottom: 10px;
+        box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
       }
       input, textarea, select, button {
         font: inherit;
-        border-radius: 4px;
+        border-radius: 8px;
         border: 1px solid var(--vscode-input-border);
         padding: 6px 8px;
-        background: var(--vscode-input-background);
+        background: color-mix(in srgb, var(--vscode-input-background) 92%, transparent);
         color: var(--vscode-input-foreground);
       }
-      button {
-        background: var(--vscode-button-background);
-        color: var(--vscode-button-foreground);
-        border: 1px solid var(--vscode-button-border, transparent);
-        cursor: pointer;
+      input:focus-visible, textarea:focus-visible, select:focus-visible {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent-soft);
       }
+      button {
+        background: linear-gradient(180deg, color-mix(in srgb, var(--vscode-button-background) 94%, white 6%), var(--vscode-button-background));
+        color: var(--vscode-button-foreground);
+        border: 1px solid color-mix(in srgb, var(--vscode-button-background) 45%, var(--surface-edge));
+        cursor: pointer;
+        transition: transform 120ms ease, filter 120ms ease;
+      }
+      button:hover { transform: translateY(-1px); filter: saturate(1.08); }
       button.secondary {
-        background: var(--vscode-button-secondaryBackground);
+        background: linear-gradient(180deg, color-mix(in srgb, var(--vscode-button-secondaryBackground) 94%, white 6%), var(--vscode-button-secondaryBackground));
         color: var(--vscode-button-secondaryForeground);
       }
       .topBar {
@@ -475,7 +548,8 @@ export function managerHtml(): string {
       }
       .context {
         font-size: 12px;
-        opacity: 0.9;
+        letter-spacing: 0.03em;
+        opacity: 0.92;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -483,107 +557,125 @@ export function managerHtml(): string {
       .saveState {
         font-size: 11px;
         border-radius: 999px;
-        border: 1px solid var(--vscode-editorWidget-border);
-        padding: 1px 8px;
+        border: 1px solid var(--surface-edge);
+        padding: 2px 9px;
+        background: color-mix(in srgb, var(--surface) 82%, transparent);
       }
       .saveState.saving { color: var(--vscode-descriptionForeground); }
       .saveState.saved { color: var(--vscode-testing-iconPassed); }
       .saveState.error { color: var(--vscode-errorForeground); }
       .card {
-        border: 1px solid var(--vscode-editorWidget-border);
-        border-radius: 8px;
+        border: 1px solid var(--surface-edge);
+        border-radius: 10px;
         padding: 10px;
         margin-top: 8px;
-        background: var(--vscode-editorWidget-background);
+        background: linear-gradient(165deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
       }
       .muted { color: var(--vscode-descriptionForeground); font-size: 12px; }
       .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
       .iconBtn {
-        width: 28px;
-        height: 28px;
+        width: 30px;
+        height: 30px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         border: 1px solid var(--vscode-input-border);
-        background: var(--vscode-input-background);
+        border-radius: 9px;
+        background: color-mix(in srgb, var(--vscode-input-background) 92%, transparent);
         color: var(--vscode-foreground);
         cursor: pointer;
       }
       .iconBtn svg { width: 14px; height: 14px; }
       .field { display: grid; grid-template-columns: 170px 1fr; gap: 8px; align-items: start; margin-top: 8px; }
-      .field > label { font-size: 12px; color: var(--vscode-descriptionForeground); padding-top: 7px; }
+      .field > label { font-size: 12px; color: var(--vscode-descriptionForeground); padding-top: 7px; letter-spacing: 0.02em; }
       .overviewRows {
         display: grid;
         gap: 8px;
         margin-top: 8px;
         border: 1px solid var(--vscode-input-border);
-        border-radius: 6px;
+        border-radius: 8px;
         padding: 8px;
+        background: color-mix(in srgb, var(--vscode-input-background) 88%, transparent);
       }
-      .overviewRow {
-        display: grid;
-        grid-template-columns: 220px 1fr;
-        gap: 8px;
-        align-items: start;
-      }
-      .overviewRow.meta {
-        grid-template-columns: 140px 1fr 1fr;
-      }
-      .overviewRows .stack {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-      .overviewRows .stack label {
-        font-size: 11px;
-        color: var(--vscode-descriptionForeground);
-      }
-      .overviewRows .stack.inlineCheckbox {
-        flex-direction: row;
-        align-items: center;
-        gap: 8px;
-        padding-top: 21px;
-      }
+      .overviewRow { display: grid; grid-template-columns: 220px 1fr; gap: 8px; align-items: start; }
+      .overviewRow.meta { grid-template-columns: 140px 1fr 1fr; }
+      .overviewRows .stack { display: flex; flex-direction: column; gap: 4px; }
+      .overviewRows .stack label { font-size: 11px; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: 0.04em; }
+      .overviewRows .stack.inlineCheckbox { flex-direction: row; align-items: center; gap: 8px; padding-top: 21px; }
       .rangeLine { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
       .chips {
         border: 1px solid var(--vscode-input-border);
-        border-radius: 6px;
+        border-radius: 8px;
         padding: 6px;
         min-height: 36px;
         display: flex;
         gap: 6px;
         flex-wrap: wrap;
         align-items: center;
-        background: var(--vscode-input-background);
+        background: color-mix(in srgb, var(--vscode-input-background) 90%, transparent);
       }
       .chip {
-        background: var(--vscode-badge-background);
+        background: linear-gradient(180deg, color-mix(in srgb, var(--vscode-badge-background) 88%, white 10%), var(--vscode-badge-background));
         color: var(--vscode-badge-foreground);
-        border-radius: 12px;
+        border-radius: 999px;
         padding: 2px 8px;
         display: inline-flex;
         align-items: center;
         gap: 6px;
         font-size: 12px;
-        border: 1px solid var(--vscode-badge-background);
+        border: 1px solid color-mix(in srgb, var(--vscode-badge-background) 74%, var(--surface-edge));
       }
       .chip button { background: transparent; color: inherit; border: none; padding: 0; cursor: pointer; }
       .chipLink { background: transparent; color: var(--vscode-textLink-foreground); border: none; padding: 0; cursor: pointer; text-decoration: underline; }
       .chipInput { border: none; outline: none; min-width: 140px; flex: 1; padding: 2px; }
       .listRow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin-top: 6px; }
       .bulletItem { border-top: 1px solid var(--vscode-editorWidget-border); padding-top: 8px; margin-top: 8px; }
-      .suiteCasesFilter {
-        display: grid;
-        grid-template-columns: 150px 1fr;
-        gap: 8px;
-        margin-top: 8px;
-      }
+      .suiteCasesFilter { display: grid; grid-template-columns: 150px 1fr; gap: 8px; margin-top: 8px; }
       .suiteCaseLine { display: grid; grid-template-columns: 180px 1fr 90px auto; gap: 8px; align-items: center; border-top: 1px solid var(--vscode-editorWidget-border); padding-top: 6px; margin-top: 6px; }
       .linkLike { background: transparent; color: var(--vscode-textLink-foreground); border: none; padding: 0; text-align: left; cursor: pointer; }
-      .chartWrap { border: 1px solid var(--vscode-editorWidget-border); border-radius: 8px; padding: 8px; background: var(--vscode-editorWidget-background); margin-top: 0; margin-bottom: 10px; }
-      .chartLegend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+      .chartWrap {
+        position: relative;
+        border: 1px solid var(--surface-edge);
+        border-radius: 10px;
+        padding: 8px;
+        background: linear-gradient(165deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
+        margin-top: 0;
+        margin-bottom: 10px;
+      }
+      .chartCanvas { position: relative; }
+      .chartTooltip {
+        position: absolute;
+        z-index: 5;
+        pointer-events: none;
+        max-width: 360px;
+        font-size: 11px;
+        line-height: 1.35;
+        border: 1px solid var(--surface-edge);
+        border-radius: 8px;
+        padding: 6px 8px;
+        color: var(--vscode-editorWidget-foreground);
+        background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
+        white-space: pre-line;
+      }
+      .chartTooltip.hidden { display: none; }
+      .chartKpis { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
+      .chartKpi {
+        border: 1px solid var(--surface-edge);
+        border-radius: 8px;
+        padding: 7px 9px;
+        background: color-mix(in srgb, var(--vscode-input-background) 88%, transparent);
+      }
+      .chartKpiLabel { font-size: 11px; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: 0.04em; }
+      .chartKpiValue { font-size: 16px; font-weight: 650; margin-top: 3px; }
+      .chartLegend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 7px; font-size: 11px; color: var(--vscode-descriptionForeground); }
       .legendDot { width: 10px; height: 10px; display: inline-block; border-radius: 2px; margin-right: 4px; }
-      .chartNote { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 4px; }
+      .chartNote { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 5px; }
+      .panel, .card, .chartWrap { animation: riseIn 220ms ease both; }
+      @keyframes riseIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
     </style>
   </head>
   <body>
@@ -605,6 +697,7 @@ export function managerHtml(): string {
       let pendingSnapshotTimer = null;
       let saveStateTimer = null;
       function esc(v){ return (v || '').replace(/"/g, '&quot;'); }
+      function escAttr(v){ return String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
       function setSaveState(kind, text) {
         saveStateEl.className = 'saveState ' + (kind || '');
         saveStateEl.textContent = text || '';
@@ -626,8 +719,9 @@ export function managerHtml(): string {
           render();
         }, wait);
       }
-      function bindAutoPersist(card, buildMessage) {
-        let lastSent = JSON.stringify(buildMessage());
+      function bindAutoPersist(card, buildMessage, buildInitialMessage) {
+        const initialMessage = buildInitialMessage ? buildInitialMessage() : buildMessage();
+        let lastSent = JSON.stringify(initialMessage);
         let debounceTimer = null;
         const markEditing = () => {
           suppressSnapshotUntil = Date.now() + 1200;
@@ -926,6 +1020,9 @@ export function managerHtml(): string {
         const actualPoints = [];
         const remainingIssuePoints = [];
         const bars = [];
+        const idealMarkers = [];
+        const actualMarkers = [];
+        const issueMarkers = [];
         const xTicks = [];
         const xGrid = [];
         const yTicks = [];
@@ -966,7 +1063,6 @@ export function managerHtml(): string {
           closedAcc += closedToday;
           const remainingIssues = Math.max(0, detectedAcc - closedAcc);
 
-          // Burndown: start from total cases and move downward as remaining decreases.
           const yIdeal = 20 + 180 * (1 - idealRemaining / yMaxLeft);
           const yActual = 20 + 180 * (1 - actualRemaining / yMaxLeft);
           const yRemainIssue = 20 + 180 - (180 * remainingIssues) / issueScaleMax;
@@ -974,12 +1070,17 @@ export function managerHtml(): string {
           actualPoints.push(x.toFixed(2) + ',' + yActual.toFixed(2));
           remainingIssuePoints.push(x.toFixed(2) + ',' + yRemainIssue.toFixed(2));
 
+          const pointTip = key + "\\nRemaining cases: " + actualRemaining + "\\nIdeal remaining: " + idealRemaining.toFixed(2) + "\\nDetected issues (cumulative): " + detectedAcc + "\\nRemaining issues: " + remainingIssues;
+          idealMarkers.push('<circle cx="' + x.toFixed(2) + '" cy="' + yIdeal.toFixed(2) + '" r="3" fill="var(--vscode-foreground)" fill-opacity="0.65" tabindex="0" data-x="' + x.toFixed(2) + '" data-y="' + yIdeal.toFixed(2) + '" data-tip="' + escAttr(pointTip) + '" aria-label="' + escAttr('Ideal remaining on ' + key + ': ' + idealRemaining.toFixed(2)) + '" />');
+          actualMarkers.push('<circle cx="' + x.toFixed(2) + '" cy="' + yActual.toFixed(2) + '" r="3.4" fill="var(--vscode-textLink-foreground)" tabindex="0" data-x="' + x.toFixed(2) + '" data-y="' + yActual.toFixed(2) + '" data-tip="' + escAttr(pointTip) + '" aria-label="' + escAttr('Actual remaining on ' + key + ': ' + actualRemaining) + '" />');
+          issueMarkers.push('<circle cx="' + x.toFixed(2) + '" cy="' + yRemainIssue.toFixed(2) + '" r="3" fill="var(--vscode-symbolIcon-variableForeground)" tabindex="0" data-x="' + x.toFixed(2) + '" data-y="' + yRemainIssue.toFixed(2) + '" data-tip="' + escAttr(pointTip) + '" aria-label="' + escAttr('Remaining issues on ' + key + ': ' + remainingIssues) + '" />');
+
           const barWidth = Math.max(2, Math.min(14, xStep * 0.65 || 10));
-          // Detected Issues should accumulate over time (cumulative stacked style by day).
           if (detectedAcc > 0) {
             const h = (180 * detectedAcc) / issueScaleMax;
             const yTop = 200 - h;
-            bars.push('<rect x="' + (x - barWidth / 2).toFixed(2) + '" y="' + yTop.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + h.toFixed(2) + '" fill="' + detectedBarColor + '" />');
+            const barTip = key + "\\nRemaining cases: " + actualRemaining + "\\nDetected issues (cumulative): " + detectedAcc;
+            bars.push('<rect x="' + (x - barWidth / 2).toFixed(2) + '" y="' + yTop.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + h.toFixed(2) + '" fill="' + detectedBarColor + '" tabindex="0" data-x="' + x.toFixed(2) + '" data-y="' + yTop.toFixed(2) + '" data-tip="' + escAttr(barTip) + '" aria-label="' + escAttr('Detected issues cumulative on ' + key + ': ' + detectedAcc) + '" />');
           }
           if (i % xTickStep === 0 || i === dates.length - 1) {
             xGrid.push('<line x1="' + x.toFixed(2) + '" y1="20" x2="' + x.toFixed(2) + '" y2="200" stroke="var(--vscode-editorWidget-border)" stroke-opacity="0.35" />');
@@ -987,20 +1088,35 @@ export function managerHtml(): string {
           }
         }
 
+        const finalRemaining = Math.max(0, totalCases - doneAcc);
+        const completedCases = Math.max(0, totalCases - finalRemaining);
+        const progressRate = totalCases > 0 ? ((completedCases * 100) / totalCases).toFixed(1) : "0.0";
+
         box.innerHTML =
           '<div><strong>Suite Burndown</strong></div>' +
-          '<svg viewBox="0 0 820 230" width="100%" height="230" role="img" aria-label="Suite burndown chart">' +
-            yTicks.join('') +
-            xGrid.join('') +
-            '<line x1="30" y1="20" x2="30" y2="200" stroke="var(--vscode-input-border)" />' +
-            '<line x1="30" y1="200" x2="790" y2="200" stroke="var(--vscode-input-border)" />' +
-            bars.join('') +
-            '<polyline fill="none" stroke="var(--vscode-foreground)" stroke-width="2" points="' + idealPoints.join(' ') + '" />' +
-            '<polyline fill="none" stroke="var(--vscode-textLink-foreground)" stroke-width="2" points="' + actualPoints.join(' ') + '" />' +
-            '<polyline fill="none" stroke="var(--vscode-symbolIcon-variableForeground)" stroke-width="2" points="' + remainingIssuePoints.join(' ') + '" />' +
-            xTicks.join('') +
-            '<text x="14" y="18" text-anchor="start" font-size="10" fill="var(--vscode-descriptionForeground)">Cases</text>' +
-          '</svg>' +
+          '<div class="chartCanvas">' +
+            '<svg viewBox="0 0 820 230" width="100%" height="230" role="img" aria-label="Suite burndown chart">' +
+              yTicks.join('') +
+              xGrid.join('') +
+              '<line x1="30" y1="20" x2="30" y2="200" stroke="var(--vscode-input-border)" />' +
+              '<line x1="30" y1="200" x2="790" y2="200" stroke="var(--vscode-input-border)" />' +
+              bars.join('') +
+              '<polyline fill="none" stroke="var(--vscode-foreground)" stroke-width="2" points="' + idealPoints.join(' ') + '" />' +
+              '<polyline fill="none" stroke="var(--vscode-textLink-foreground)" stroke-width="2" points="' + actualPoints.join(' ') + '" />' +
+              '<polyline fill="none" stroke="var(--vscode-symbolIcon-variableForeground)" stroke-width="2" points="' + remainingIssuePoints.join(' ') + '" />' +
+              idealMarkers.join('') +
+              actualMarkers.join('') +
+              issueMarkers.join('') +
+              xTicks.join('') +
+              '<text x="14" y="18" text-anchor="start" font-size="10" fill="var(--vscode-descriptionForeground)">Cases</text>' +
+            '</svg>' +
+            '<div class="chartTooltip hidden" data-role="chartTooltip" aria-live="polite"></div>' +
+          '</div>' +
+          '<div class="chartKpis">' +
+            '<div class="chartKpi"><div class="chartKpiLabel">Remaining cases</div><div class="chartKpiValue">' + String(finalRemaining) + '</div></div>' +
+            '<div class="chartKpi"><div class="chartKpiLabel">Completed cases</div><div class="chartKpiValue">' + String(completedCases) + '</div></div>' +
+            '<div class="chartKpi"><div class="chartKpiLabel">Progress rate</div><div class="chartKpiValue">' + progressRate + '%</div></div>' +
+          '</div>' +
           '<div class="chartLegend">' +
             '<span><i class="legendDot" style="background:var(--vscode-foreground)"></i>Ideal Remaining</span>' +
             '<span><i class="legendDot" style="background:var(--vscode-textLink-foreground)"></i>Actual Remaining</span>' +
@@ -1008,6 +1124,67 @@ export function managerHtml(): string {
             '<span><i class="legendDot" style="background:var(--vscode-symbolIcon-variableForeground)"></i>Remaining Issues/day</span>' +
           '</div>' +
           '<div class="chartNote">Scope rule: only Suite scoped=true and Case scoped=true are counted. Detected issues bars are cumulative by detectedDay. Remaining issues uses cumulative detected minus cumulative completedDay.</div>';
+
+        const tooltip = box.querySelector('[data-role="chartTooltip"]');
+        const canvas = box.querySelector('.chartCanvas');
+        const svg = box.querySelector('svg');
+        const hideTooltip = () => {
+          tooltip.classList.add('hidden');
+        };
+        const showTooltip = (target) => {
+          if (!target || !tooltip || !canvas || !svg) {
+            return;
+          }
+          const text = target.getAttribute('data-tip') || '';
+          if (!text) {
+            hideTooltip();
+            return;
+          }
+          const x = Number(target.getAttribute('data-x') || '0');
+          const y = Number(target.getAttribute('data-y') || '0');
+          const svgRect = svg.getBoundingClientRect();
+          if (!svgRect.width || !svgRect.height) {
+            return;
+          }
+
+          tooltip.textContent = text;
+          tooltip.classList.remove('hidden');
+
+          const tipRect = tooltip.getBoundingClientRect();
+          const leftBase = (x / 820) * svgRect.width;
+          const topBase = (y / 230) * svgRect.height;
+          const margin = 8;
+          let left = leftBase + margin;
+          let top = topBase - tipRect.height - margin;
+          if (left + tipRect.width > svgRect.width - margin) {
+            left = svgRect.width - tipRect.width - margin;
+          }
+          if (left < margin) {
+            left = margin;
+          }
+          if (top < margin) {
+            top = topBase + margin;
+          }
+          if (top + tipRect.height > svgRect.height - margin) {
+            top = svgRect.height - tipRect.height - margin;
+          }
+          tooltip.style.left = left.toFixed(2) + 'px';
+          tooltip.style.top = top.toFixed(2) + 'px';
+        };
+
+        for (const target of box.querySelectorAll('[data-tip]')) {
+          target.addEventListener('mouseenter', () => showTooltip(target));
+          target.addEventListener('mousemove', () => showTooltip(target));
+          target.addEventListener('focus', () => showTooltip(target));
+          target.addEventListener('mouseleave', hideTooltip);
+          target.addEventListener('blur', hideTooltip);
+          target.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+              hideTooltip();
+            }
+          });
+        }
+
         return box;
       }
       function createNumberedList(listEl, values) {
@@ -1176,8 +1353,33 @@ export function managerHtml(): string {
           testCase.id
         );
         const remarksEditor = createTextListEditor(card.querySelector('[data-role="caseRemarksEditor"]'), testCase.remarks || [], 'Add Remark', { multiline: true });
+        const statusEl = card.querySelector('[data-role="status"]');
+        const completedDayEl = card.querySelector('[data-role="completedDay"]');
+        const todayDate = () => new Date().toISOString().slice(0, 10);
+        const deriveCaseDraftFields = () => {
+          const tests = testsEditor.values();
+          const allTestsPass = tests.length > 0 && tests.every((test) => test.status === 'pass');
+          const status = allTestsPass ? 'done' : (statusEl.value || null);
+          if (status === 'done') {
+            const today = todayDate();
+            statusEl.value = 'done';
+            completedDayEl.value = today;
+          }
+          return {
+            status,
+            completedDay: completedDayEl.value,
+            tests
+          };
+        };
+        statusEl.addEventListener('change', () => {
+          if (statusEl.value === 'done') {
+            completedDayEl.value = todayDate();
+          }
+        });
         card.querySelector('[data-role="openRaw"]').addEventListener('click', () => vscode.postMessage({ type: 'openRaw', path: testCase.path }));
-        bindAutoPersist(card, () => ({
+        bindAutoPersist(card, () => {
+            const derived = deriveCaseDraftFields();
+            return {
             type: 'saveCase',
             path: testCase.path,
             id: testCase.id,
@@ -1186,11 +1388,28 @@ export function managerHtml(): string {
             tags: tagsEditor.getValues().join(','),
             owners: ownersEditor.getValues().join(','),
             scoped: card.querySelector('[data-role="scoped"]').checked,
-            status: card.querySelector('[data-role="status"]').value || null,
+            status: derived.status,
             operations: ops.values(),
             related: relatedEditor.getValues().join(','),
             remarks: remarksEditor.values().join('\\n'),
-            completedDay: card.querySelector('[data-role="completedDay"]').value,
+            completedDay: derived.completedDay,
+            tests: derived.tests,
+            issues: issuesEditor.values()
+            };
+          }, () => ({
+            type: 'saveCase',
+            path: testCase.path,
+            id: testCase.id,
+            title: card.querySelector('[data-role="title"]').value,
+            description: card.querySelector('[data-role="description"]').value,
+            tags: tagsEditor.getValues().join(','),
+            owners: ownersEditor.getValues().join(','),
+            scoped: card.querySelector('[data-role="scoped"]').checked,
+            status: statusEl.value || null,
+            operations: ops.values(),
+            related: relatedEditor.getValues().join(','),
+            remarks: remarksEditor.values().join('\\n'),
+            completedDay: completedDayEl.value,
             tests: testsEditor.values(),
             issues: issuesEditor.values()
           }));
@@ -1265,10 +1484,18 @@ export function managerHtml(): string {
       window.addEventListener('message', (event) => {
         const msg = event.data;
         if (msg.type === 'snapshot') {
-          if (Date.now() < suppressSnapshotUntil) {
+          const currentPath = snapshot.selectedCase?.path || snapshot.selectedSuite?.path || '';
+          const nextPath = msg.payload.selectedCase?.path || msg.payload.selectedSuite?.path || '';
+          const selectionChanged = currentPath !== nextPath;
+          if (!selectionChanged && Date.now() < suppressSnapshotUntil) {
             pendingSnapshot = msg.payload;
             schedulePendingSnapshotApply();
             return;
+          }
+          pendingSnapshot = null;
+          if (pendingSnapshotTimer) {
+            clearTimeout(pendingSnapshotTimer);
+            pendingSnapshotTimer = null;
           }
           snapshot = msg.payload;
           render();

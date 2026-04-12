@@ -147,6 +147,8 @@ describe("tlog cli", () => {
       "Login Success",
       "--owners",
       "qa-team",
+      "--tags",
+      "smoke",
       "--status",
       "doing"
     ]);
@@ -154,6 +156,7 @@ describe("tlog cli", () => {
     expect(result.exitCode).toBe(0);
     const file = readFileSync(join(suiteDir, "case-1.testcase.yaml"), "utf8");
     expect(file).toContain("id: case-1");
+    expect(file.indexOf("tags:")).toBeLessThan(file.indexOf("owners:"));
     expect(file).toContain("- qa-team");
     expect(file).toContain("status: doing");
   });

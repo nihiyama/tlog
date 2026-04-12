@@ -181,7 +181,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text",
-    "package:vsix": "vsce package --no-dependencies --baseContentUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension --baseImagesUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension",
+    "package:vsix": "npm run build && vsce package --no-dependencies --baseContentUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension --baseImagesUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension",
     "publish:marketplace": "vsce publish --no-dependencies --baseContentUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension --baseImagesUrl https://raw.githubusercontent.com/nihiyama/tlog/main/packages/vscode-extension",
     "publish:precheck": "npm run typecheck && npm run test && npm run package:vsix"
   },

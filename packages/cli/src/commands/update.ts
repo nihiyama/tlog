@@ -191,11 +191,11 @@ export function runCaseUpdate(cwd: string, options: CaseUpdateOptions, globalOpt
   const issues = readJsonArrayFile<Issue>(cwd, options.issuesFile, "issues");
   const status = options.status === undefined ? undefined : toStatus(options.status);
 
-  const updated: TestCase = {
+  const merged: TestCase = {
     ...current,
     ...(options.description !== undefined ? { description: options.description } : {}),
-    ...(options.owners !== undefined ? { owners: splitCsv(options.owners) } : {}),
     ...(options.tags !== undefined ? { tags: splitCsv(options.tags) } : {}),
+    ...(options.owners !== undefined ? { owners: splitCsv(options.owners) } : {}),
     ...(options.operations !== undefined ? { operations: splitCsv(options.operations) } : {}),
     ...(options.related !== undefined ? { related: splitCsv(options.related) } : {}),
     ...(options.remarks !== undefined ? { remarks: splitCsv(options.remarks) } : {}),
@@ -204,6 +204,22 @@ export function runCaseUpdate(cwd: string, options: CaseUpdateOptions, globalOpt
     ...(options.completedDay !== undefined ? { completedDay: options.completedDay === "null" ? null : asTlogDateString(options.completedDay) } : {}),
     ...(testItems !== undefined ? { tests: testItems } : {}),
     ...(issues !== undefined ? { issues } : {})
+  };
+
+  const updated: TestCase = {
+    id: merged.id,
+    title: merged.title,
+    tags: merged.tags,
+    owners: merged.owners,
+    description: merged.description,
+    scoped: merged.scoped,
+    status: merged.status,
+    operations: merged.operations,
+    related: merged.related,
+    remarks: merged.remarks,
+    completedDay: merged.completedDay,
+    tests: merged.tests,
+    issues: merged.issues
   };
 
   const validation = validateCase(updated);
