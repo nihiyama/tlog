@@ -145,5 +145,8 @@ describe("webviews html", () => {
     expect(html).toContain("saveState");
     expect(html).toContain("chartTooltip");
     expect(html).toContain("data-tip");
+    expect(html).toContain("Remaining cases");
+    expect(html).toContain("Completed cases");
+    expect(html).toContain("Progress rate");
   });
 });
