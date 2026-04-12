@@ -338,6 +338,16 @@ export function controlsHtml(): string {
       const postApply = () => {
         vscode.postMessage({ type: "applySearch", ...currentFilterState() });
       };
+      const applyOnEnter = (event) => {
+        if (event.key !== "Enter" || event.isComposing) {
+          return;
+        }
+        event.preventDefault();
+        postApply();
+      };
+      const bindEnterToChecks = (root) => {
+        getChecks(root).forEach((el) => el.addEventListener("keydown", applyOnEnter));
+      };
       const refreshTrigger = (root, trigger, fallback) => {
         const picked = selectedValues(root);
         const label = trigger.querySelector('[data-role="triggerLabel"]');
@@ -418,6 +428,9 @@ export function controlsHtml(): string {
       bindMulti(statusTrigger, statusPanel, statusSelect, "Select status");
       bindMulti(issueHasTrigger, issueHasPanel, issueHasSelect, "Select issue presence");
       bindMulti(issueStatusTrigger, issueStatusPanel, issueStatusSelect, "Select issue status");
+      bindEnterToChecks(statusSelect);
+      bindEnterToChecks(issueHasSelect);
+      bindEnterToChecks(issueStatusSelect);
       document.addEventListener("click", () => closeAllPanels());
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
@@ -426,8 +439,11 @@ export function controlsHtml(): string {
         }
       });
       scopedOnlyEl.addEventListener("change", renderActiveFilters);
+      scopedOnlyEl.addEventListener("keydown", applyOnEnter);
       tagsEl.addEventListener("input", renderActiveFilters);
+      tagsEl.addEventListener("keydown", applyOnEnter);
       ownersEl.addEventListener("input", renderActiveFilters);
+      ownersEl.addEventListener("keydown", applyOnEnter);
       advancedFiltersEl.addEventListener("toggle", closeAllPanels);
 
       document.getElementById("setRoot").addEventListener("click", () => {

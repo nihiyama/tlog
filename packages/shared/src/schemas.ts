@@ -84,8 +84,8 @@ export const testCaseSchema = z
   .object({
     id: nonEmptyStringSchema,
     title: nonEmptyStringSchema,
-    owners: stringArraySchema.default([]),
     tags: stringArraySchema,
+    owners: stringArraySchema.default([]),
     description: z.string(),
     scoped: z.boolean(),
     status: testcaseStatusSchema.nullable(),

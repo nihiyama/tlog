@@ -40,6 +40,8 @@ export function matchCaseWithFilters(
     scoped: boolean;
     status: TestCase["status"];
     suiteOwners: string[];
+    owners?: string[];
+    issueOwners?: string[];
     issueCount: number;
     issueStatuses: string[];
   },
@@ -48,8 +50,15 @@ export function matchCaseWithFilters(
   if (filters.scopedOnly && !item.scoped) {
     return false;
   }
-  if (filters.owners.length > 0 && !filters.owners.some((owner) => item.suiteOwners.includes(owner))) {
-    return false;
+  if (filters.owners.length > 0) {
+    const ownerPool = new Set([
+      ...item.suiteOwners,
+      ...(item.owners ?? []),
+      ...(item.issueOwners ?? [])
+    ]);
+    if (!filters.owners.some((owner) => ownerPool.has(owner))) {
+      return false;
+    }
   }
   if (filters.testcaseStatus.length > 0 && !filters.testcaseStatus.includes((item.status ?? null) as "todo" | "doing" | "done")) {
     return false;
