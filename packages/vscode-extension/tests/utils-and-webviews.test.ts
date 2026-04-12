@@ -148,5 +148,8 @@ describe("webviews html", () => {
     expect(html).toContain("Remaining cases");
     expect(html).toContain("Completed cases");
     expect(html).toContain("Progress rate");
+    expect(html).toContain("deriveCaseDraftFields");
+    expect(html).toContain("allTestsPass");
+    expect(html).toContain("statusEl.value = 'done'");
   });
 });

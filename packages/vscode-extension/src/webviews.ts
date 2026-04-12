@@ -703,8 +703,9 @@ export function managerHtml(): string {
           render();
         }, wait);
       }
-      function bindAutoPersist(card, buildMessage) {
-        let lastSent = JSON.stringify(buildMessage());
+      function bindAutoPersist(card, buildMessage, buildInitialMessage) {
+        const initialMessage = buildInitialMessage ? buildInitialMessage() : buildMessage();
+        let lastSent = JSON.stringify(initialMessage);
         let debounceTimer = null;
         const markEditing = () => {
           suppressSnapshotUntil = Date.now() + 1200;
@@ -1336,8 +1337,33 @@ export function managerHtml(): string {
           testCase.id
         );
         const remarksEditor = createTextListEditor(card.querySelector('[data-role="caseRemarksEditor"]'), testCase.remarks || [], 'Add Remark', { multiline: true });
+        const statusEl = card.querySelector('[data-role="status"]');
+        const completedDayEl = card.querySelector('[data-role="completedDay"]');
+        const todayDate = () => new Date().toISOString().slice(0, 10);
+        const deriveCaseDraftFields = () => {
+          const tests = testsEditor.values();
+          const allTestsPass = tests.length > 0 && tests.every((test) => test.status === 'pass');
+          const status = allTestsPass ? 'done' : (statusEl.value || null);
+          if (status === 'done') {
+            const today = todayDate();
+            statusEl.value = 'done';
+            completedDayEl.value = today;
+          }
+          return {
+            status,
+            completedDay: completedDayEl.value,
+            tests
+          };
+        };
+        statusEl.addEventListener('change', () => {
+          if (statusEl.value === 'done') {
+            completedDayEl.value = todayDate();
+          }
+        });
         card.querySelector('[data-role="openRaw"]').addEventListener('click', () => vscode.postMessage({ type: 'openRaw', path: testCase.path }));
-        bindAutoPersist(card, () => ({
+        bindAutoPersist(card, () => {
+            const derived = deriveCaseDraftFields();
+            return {
             type: 'saveCase',
             path: testCase.path,
             id: testCase.id,
@@ -1346,11 +1372,28 @@ export function managerHtml(): string {
             tags: tagsEditor.getValues().join(','),
             owners: ownersEditor.getValues().join(','),
             scoped: card.querySelector('[data-role="scoped"]').checked,
-            status: card.querySelector('[data-role="status"]').value || null,
+            status: derived.status,
             operations: ops.values(),
             related: relatedEditor.getValues().join(','),
             remarks: remarksEditor.values().join('\\n'),
-            completedDay: card.querySelector('[data-role="completedDay"]').value,
+            completedDay: derived.completedDay,
+            tests: derived.tests,
+            issues: issuesEditor.values()
+            };
+          }, () => ({
+            type: 'saveCase',
+            path: testCase.path,
+            id: testCase.id,
+            title: card.querySelector('[data-role="title"]').value,
+            description: card.querySelector('[data-role="description"]').value,
+            tags: tagsEditor.getValues().join(','),
+            owners: ownersEditor.getValues().join(','),
+            scoped: card.querySelector('[data-role="scoped"]').checked,
+            status: statusEl.value || null,
+            operations: ops.values(),
+            related: relatedEditor.getValues().join(','),
+            remarks: remarksEditor.values().join('\\n'),
+            completedDay: completedDayEl.value,
             tests: testsEditor.values(),
             issues: issuesEditor.values()
           }));
@@ -1425,10 +1468,18 @@ export function managerHtml(): string {
       window.addEventListener('message', (event) => {
         const msg = event.data;
         if (msg.type === 'snapshot') {
-          if (Date.now() < suppressSnapshotUntil) {
+          const currentPath = snapshot.selectedCase?.path || snapshot.selectedSuite?.path || '';
+          const nextPath = msg.payload.selectedCase?.path || msg.payload.selectedSuite?.path || '';
+          const selectionChanged = currentPath !== nextPath;
+          if (!selectionChanged && Date.now() < suppressSnapshotUntil) {
             pendingSnapshot = msg.payload;
             schedulePendingSnapshotApply();
             return;
+          }
+          pendingSnapshot = null;
+          if (pendingSnapshotTimer) {
+            clearTimeout(pendingSnapshotTimer);
+            pendingSnapshotTimer = null;
           }
           snapshot = msg.payload;
           render();
