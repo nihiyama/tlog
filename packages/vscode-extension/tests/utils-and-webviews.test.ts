@@ -143,5 +143,7 @@ describe("webviews html", () => {
     expect(html).toContain("Suite Burndown");
     expect(html).toContain("Case Editor");
     expect(html).toContain("saveState");
+    expect(html).toContain("chartTooltip");
+    expect(html).toContain("data-tip");
   });
 });

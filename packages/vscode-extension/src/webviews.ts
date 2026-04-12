@@ -580,7 +580,10 @@ export function managerHtml(): string {
       }
       .suiteCaseLine { display: grid; grid-template-columns: 180px 1fr 90px auto; gap: 8px; align-items: center; border-top: 1px solid var(--vscode-editorWidget-border); padding-top: 6px; margin-top: 6px; }
       .linkLike { background: transparent; color: var(--vscode-textLink-foreground); border: none; padding: 0; text-align: left; cursor: pointer; }
-      .chartWrap { border: 1px solid var(--vscode-editorWidget-border); border-radius: 8px; padding: 8px; background: var(--vscode-editorWidget-background); margin-top: 0; margin-bottom: 10px; }
+      .chartWrap { position: relative; border: 1px solid var(--vscode-editorWidget-border); border-radius: 8px; padding: 8px; background: var(--vscode-editorWidget-background); margin-top: 0; margin-bottom: 10px; }
+      .chartCanvas { position: relative; }
+      .chartTooltip { position: absolute; z-index: 5; pointer-events: none; max-width: 360px; font-size: 11px; line-height: 1.35; border: 1px solid var(--vscode-editorWidget-border); border-radius: 6px; padding: 6px 8px; color: var(--vscode-editorWidget-foreground); background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background)); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); white-space: pre-line; }
+      .chartTooltip.hidden { display: none; }
       .chartLegend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; color: var(--vscode-descriptionForeground); }
       .legendDot { width: 10px; height: 10px; display: inline-block; border-radius: 2px; margin-right: 4px; }
       .chartNote { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 4px; }
@@ -605,6 +608,7 @@ export function managerHtml(): string {
       let pendingSnapshotTimer = null;
       let saveStateTimer = null;
       function esc(v){ return (v || '').replace(/"/g, '&quot;'); }
+      function escAttr(v){ return String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
       function setSaveState(kind, text) {
         saveStateEl.className = 'saveState ' + (kind || '');
         saveStateEl.textContent = text || '';
@@ -926,6 +930,9 @@ export function managerHtml(): string {
         const actualPoints = [];
         const remainingIssuePoints = [];
         const bars = [];
+        const idealMarkers = [];
+        const actualMarkers = [];
+        const issueMarkers = [];
         const xTicks = [];
         const xGrid = [];
         const yTicks = [];
@@ -966,7 +973,6 @@ export function managerHtml(): string {
           closedAcc += closedToday;
           const remainingIssues = Math.max(0, detectedAcc - closedAcc);
 
-          // Burndown: start from total cases and move downward as remaining decreases.
           const yIdeal = 20 + 180 * (1 - idealRemaining / yMaxLeft);
           const yActual = 20 + 180 * (1 - actualRemaining / yMaxLeft);
           const yRemainIssue = 20 + 180 - (180 * remainingIssues) / issueScaleMax;
@@ -974,12 +980,17 @@ export function managerHtml(): string {
           actualPoints.push(x.toFixed(2) + ',' + yActual.toFixed(2));
           remainingIssuePoints.push(x.toFixed(2) + ',' + yRemainIssue.toFixed(2));
 
+          const pointTip = key + "\\nRemaining cases: " + actualRemaining + "\\nIdeal remaining: " + idealRemaining.toFixed(2) + "\\nDetected issues (cumulative): " + detectedAcc + "\\nRemaining issues: " + remainingIssues;
+          idealMarkers.push('<circle cx="' + x.toFixed(2) + '" cy="' + yIdeal.toFixed(2) + '" r="3" fill="var(--vscode-foreground)" fill-opacity="0.65" tabindex="0" data-x="' + x.toFixed(2) + '" data-y="' + yIdeal.toFixed(2) + '" data-tip="' + escAttr(pointTip) + '" aria-label="' + escAttr('Ideal remaining on ' + key + ': ' + idealRemaining.toFixed(2)) + '" />');
+          actualMarkers.push('<circle cx="' + x.toFixed(2) + '" cy="' + yActual.toFixed(2) + '" r="3.4" fill="var(--vscode-textLink-foreground)" tabindex="0" data-x="' + x.toFixed(2) + '" data-y="' + yActual.toFixed(2) + '" data-tip="' + escAttr(pointTip) + '" aria-label="' + escAttr('Actual remaining on ' + key + ': ' + actualRemaining) + '" />');
+          issueMarkers.push('<circle cx="' + x.toFixed(2) + '" cy="' + yRemainIssue.toFixed(2) + '" r="3" fill="var(--vscode-symbolIcon-variableForeground)" tabindex="0" data-x="' + x.toFixed(2) + '" data-y="' + yRemainIssue.toFixed(2) + '" data-tip="' + escAttr(pointTip) + '" aria-label="' + escAttr('Remaining issues on ' + key + ': ' + remainingIssues) + '" />');
+
           const barWidth = Math.max(2, Math.min(14, xStep * 0.65 || 10));
-          // Detected Issues should accumulate over time (cumulative stacked style by day).
           if (detectedAcc > 0) {
             const h = (180 * detectedAcc) / issueScaleMax;
             const yTop = 200 - h;
-            bars.push('<rect x="' + (x - barWidth / 2).toFixed(2) + '" y="' + yTop.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + h.toFixed(2) + '" fill="' + detectedBarColor + '" />');
+            const barTip = key + "\\nRemaining cases: " + actualRemaining + "\\nDetected issues (cumulative): " + detectedAcc;
+            bars.push('<rect x="' + (x - barWidth / 2).toFixed(2) + '" y="' + yTop.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + h.toFixed(2) + '" fill="' + detectedBarColor + '" tabindex="0" data-x="' + x.toFixed(2) + '" data-y="' + yTop.toFixed(2) + '" data-tip="' + escAttr(barTip) + '" aria-label="' + escAttr('Detected issues cumulative on ' + key + ': ' + detectedAcc) + '" />');
           }
           if (i % xTickStep === 0 || i === dates.length - 1) {
             xGrid.push('<line x1="' + x.toFixed(2) + '" y1="20" x2="' + x.toFixed(2) + '" y2="200" stroke="var(--vscode-editorWidget-border)" stroke-opacity="0.35" />');
@@ -989,18 +1000,24 @@ export function managerHtml(): string {
 
         box.innerHTML =
           '<div><strong>Suite Burndown</strong></div>' +
-          '<svg viewBox="0 0 820 230" width="100%" height="230" role="img" aria-label="Suite burndown chart">' +
-            yTicks.join('') +
-            xGrid.join('') +
-            '<line x1="30" y1="20" x2="30" y2="200" stroke="var(--vscode-input-border)" />' +
-            '<line x1="30" y1="200" x2="790" y2="200" stroke="var(--vscode-input-border)" />' +
-            bars.join('') +
-            '<polyline fill="none" stroke="var(--vscode-foreground)" stroke-width="2" points="' + idealPoints.join(' ') + '" />' +
-            '<polyline fill="none" stroke="var(--vscode-textLink-foreground)" stroke-width="2" points="' + actualPoints.join(' ') + '" />' +
-            '<polyline fill="none" stroke="var(--vscode-symbolIcon-variableForeground)" stroke-width="2" points="' + remainingIssuePoints.join(' ') + '" />' +
-            xTicks.join('') +
-            '<text x="14" y="18" text-anchor="start" font-size="10" fill="var(--vscode-descriptionForeground)">Cases</text>' +
-          '</svg>' +
+          '<div class="chartCanvas">' +
+            '<svg viewBox="0 0 820 230" width="100%" height="230" role="img" aria-label="Suite burndown chart">' +
+              yTicks.join('') +
+              xGrid.join('') +
+              '<line x1="30" y1="20" x2="30" y2="200" stroke="var(--vscode-input-border)" />' +
+              '<line x1="30" y1="200" x2="790" y2="200" stroke="var(--vscode-input-border)" />' +
+              bars.join('') +
+              '<polyline fill="none" stroke="var(--vscode-foreground)" stroke-width="2" points="' + idealPoints.join(' ') + '" />' +
+              '<polyline fill="none" stroke="var(--vscode-textLink-foreground)" stroke-width="2" points="' + actualPoints.join(' ') + '" />' +
+              '<polyline fill="none" stroke="var(--vscode-symbolIcon-variableForeground)" stroke-width="2" points="' + remainingIssuePoints.join(' ') + '" />' +
+              idealMarkers.join('') +
+              actualMarkers.join('') +
+              issueMarkers.join('') +
+              xTicks.join('') +
+              '<text x="14" y="18" text-anchor="start" font-size="10" fill="var(--vscode-descriptionForeground)">Cases</text>' +
+            '</svg>' +
+            '<div class="chartTooltip hidden" data-role="chartTooltip" aria-live="polite"></div>' +
+          '</div>' +
           '<div class="chartLegend">' +
             '<span><i class="legendDot" style="background:var(--vscode-foreground)"></i>Ideal Remaining</span>' +
             '<span><i class="legendDot" style="background:var(--vscode-textLink-foreground)"></i>Actual Remaining</span>' +
@@ -1008,6 +1025,67 @@ export function managerHtml(): string {
             '<span><i class="legendDot" style="background:var(--vscode-symbolIcon-variableForeground)"></i>Remaining Issues/day</span>' +
           '</div>' +
           '<div class="chartNote">Scope rule: only Suite scoped=true and Case scoped=true are counted. Detected issues bars are cumulative by detectedDay. Remaining issues uses cumulative detected minus cumulative completedDay.</div>';
+
+        const tooltip = box.querySelector('[data-role="chartTooltip"]');
+        const canvas = box.querySelector('.chartCanvas');
+        const svg = box.querySelector('svg');
+        const hideTooltip = () => {
+          tooltip.classList.add('hidden');
+        };
+        const showTooltip = (target) => {
+          if (!target || !tooltip || !canvas || !svg) {
+            return;
+          }
+          const text = target.getAttribute('data-tip') || '';
+          if (!text) {
+            hideTooltip();
+            return;
+          }
+          const x = Number(target.getAttribute('data-x') || '0');
+          const y = Number(target.getAttribute('data-y') || '0');
+          const svgRect = svg.getBoundingClientRect();
+          if (!svgRect.width || !svgRect.height) {
+            return;
+          }
+
+          tooltip.textContent = text;
+          tooltip.classList.remove('hidden');
+
+          const tipRect = tooltip.getBoundingClientRect();
+          const leftBase = (x / 820) * svgRect.width;
+          const topBase = (y / 230) * svgRect.height;
+          const margin = 8;
+          let left = leftBase + margin;
+          let top = topBase - tipRect.height - margin;
+          if (left + tipRect.width > svgRect.width - margin) {
+            left = svgRect.width - tipRect.width - margin;
+          }
+          if (left < margin) {
+            left = margin;
+          }
+          if (top < margin) {
+            top = topBase + margin;
+          }
+          if (top + tipRect.height > svgRect.height - margin) {
+            top = svgRect.height - tipRect.height - margin;
+          }
+          tooltip.style.left = left.toFixed(2) + 'px';
+          tooltip.style.top = top.toFixed(2) + 'px';
+        };
+
+        for (const target of box.querySelectorAll('[data-tip]')) {
+          target.addEventListener('mouseenter', () => showTooltip(target));
+          target.addEventListener('mousemove', () => showTooltip(target));
+          target.addEventListener('focus', () => showTooltip(target));
+          target.addEventListener('mouseleave', hideTooltip);
+          target.addEventListener('blur', hideTooltip);
+          target.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+              hideTooltip();
+            }
+          });
+        }
+
         return box;
       }
       function createNumberedList(listEl, values) {
