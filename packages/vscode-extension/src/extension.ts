@@ -706,6 +706,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(
+    vscodeApi.commands.registerCommand("tlog.expandAllSuites", async () => {
+      await provider.refresh();
+      const suites = provider.getNodes().filter((node) => node.type === "suite");
+      for (const suite of suites) {
+        await tree.reveal(suite, { select: false, focus: false, expand: true });
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscodeApi.commands.registerCommand("tlog.collapseAllSuites", async () => {
+      await vscodeApi.commands.executeCommand("workbench.actions.treeView.tlog.tree.collapseAll");
+    })
+  );
+
+  context.subscriptions.push(
     vscodeApi.commands.registerCommand("tlog.refreshTree", async () => {
       await refreshAllViews();
     })

@@ -138,6 +138,8 @@ describe("extension lifecycle", () => {
     expect(registerWebviewViewProvider).toHaveBeenCalledWith("tlog.controls", expect.any(Object));
     expect(registerCommand).toHaveBeenCalledWith("tlog.selectRoot", expect.any(Function));
     expect(registerCommand).toHaveBeenCalledWith("tlog.openManager", expect.any(Function));
+    expect(registerCommand).toHaveBeenCalledWith("tlog.expandAllSuites", expect.any(Function));
+    expect(registerCommand).toHaveBeenCalledWith("tlog.collapseAllSuites", expect.any(Function));
     expect(registerCommand).toHaveBeenCalledWith("tlog.refreshTree", expect.any(Function));
     expect(registerCommand).toHaveBeenCalledWith("tlog.showSuiteStats", expect.any(Function));
     expect(registerCommand).toHaveBeenCalledWith("tlog.openRelated", expect.any(Function));
