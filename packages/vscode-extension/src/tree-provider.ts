@@ -4,6 +4,28 @@ import type { TreeNodeModel } from "./tlog-workspace.js";
 import { getWorkspaceSnapshot, loadTree } from "./tlog-workspace.js";
 import { matchCaseWithFilters, normalizeTreeFilters, type TreeFilters } from "./filters.js";
 
+function pruneEmptySuites(nodes: TreeNodeModel[]): TreeNodeModel[] {
+  const suiteByPath = new Map(nodes.filter((node) => node.type === "suite").map((node) => [node.path, node] as const));
+  const keepSuitePaths = new Set<string>();
+
+  for (const node of nodes) {
+    if (node.type !== "case") {
+      continue;
+    }
+    let cursor = node.parentPath;
+    while (cursor) {
+      const suiteNode = suiteByPath.get(cursor);
+      if (!suiteNode) {
+        break;
+      }
+      keepSuitePaths.add(suiteNode.path);
+      cursor = suiteNode.parentPath;
+    }
+  }
+
+  return nodes.filter((node) => node.type !== "suite" || keepSuitePaths.has(node.path));
+}
+
 export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeModel> {
   private readonly emitter: vscode.EventEmitter<TreeNodeModel | undefined | void>;
   private nodes: TreeNodeModel[] = [];
@@ -88,6 +110,7 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
         );
 
         nodes = nodes.filter((node) => node.type !== "case" || allowedCasePaths.has(node.path));
+        nodes = pruneEmptySuites(nodes);
       }
 
       this.nodes = nodes;
