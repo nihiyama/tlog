@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0
+
+### Minor Changes
+
+- 6a852c7: Release v0.2.0.
+
+  Highlights:
+  - Improved VS Code owners filtering to match suite owners, case owners, and issue owners from the Controls pane.
+  - Stabilized case YAML field order so `owners` is written immediately after `tags`.
+  - Fixed VSIX packaging flow to build latest extension sources before packaging.
+  - Polished suites controls/icons and related UI behavior updates delivered in recent issue fixes.
+
+### Patch Changes
+
+- Updated dependencies [6a852c7]
+  - @tlog/shared@0.2.0
+
 ## 0.1.34
 
 ### Patch Changes
