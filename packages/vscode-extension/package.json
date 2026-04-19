@@ -2,7 +2,7 @@
   "name": "vscode-tlog",
   "displayName": "TLog Test Manager",
   "publisher": "nihiyama",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "tlog VS Code extension",
   "icon": "media/icon.png",
@@ -219,6 +219,6 @@
     "esbuild": "^0.27.3"
   },
   "dependencies": {
-    "@tlog/shared": "0.2.0"
+    "@tlog/shared": "0.3.0"
   }
 }
