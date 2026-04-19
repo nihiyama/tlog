@@ -175,6 +175,8 @@ describe("webviews html", () => {
     expect(html).toContain("chartTooltip");
     expect(html).toContain("deriveCaseDraftFields");
     expect(html).toContain("allTestsPass");
+    expect(html).toContain("Drag to reorder operation");
+    expect(html).toContain("dragHandle");
     expect(html).toContain("statusEl.value = 'done'");
   });
 });

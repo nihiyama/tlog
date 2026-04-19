@@ -629,6 +629,10 @@ export function managerHtml(): string {
       .chipLink { background: transparent; color: var(--vscode-textLink-foreground); border: none; padding: 0; cursor: pointer; text-decoration: underline; }
       .chipInput { border: none; outline: none; min-width: 140px; flex: 1; padding: 2px; }
       .listRow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin-top: 6px; }
+      .operationsRow { grid-template-columns: auto auto 1fr auto; }
+      .dragHandle { border: 1px solid var(--surface-edge); border-radius: 6px; background: color-mix(in srgb, var(--vscode-input-background) 88%, transparent); color: var(--vscode-descriptionForeground); cursor: grab; padding: 2px 6px; line-height: 1; font-weight: 700; }
+      .dragHandle:active { cursor: grabbing; }
+      .operationsRow.dragging { opacity: 0.55; }
       .bulletItem { border-top: 1px solid var(--vscode-editorWidget-border); padding-top: 8px; margin-top: 8px; }
       .suiteCasesFilter { display: grid; grid-template-columns: 150px 1fr; gap: 8px; margin-top: 8px; }
       .suiteCaseLine { display: grid; grid-template-columns: 180px 1fr 90px auto; gap: 8px; align-items: center; border-top: 1px solid var(--vscode-editorWidget-border); padding-top: 6px; margin-top: 6px; }
@@ -1189,6 +1193,11 @@ export function managerHtml(): string {
         return box;
       }
       function createNumberedList(listEl, values) {
+        let draggingRow = null;
+        let movedByDrag = false;
+        const notifyReordered = () => {
+          listEl.dispatchEvent(new Event('change', { bubbles: true }));
+        };
         const renumber = () => {
           let i = 1;
           for (const row of listEl.querySelectorAll('[data-role="list-row"]')) {
@@ -1196,15 +1205,102 @@ export function managerHtml(): string {
             i += 1;
           }
         };
+        const moveRowIfNeeded = (targetRow, clientY) => {
+          if (!draggingRow || draggingRow === targetRow) {
+            return;
+          }
+          const rect = targetRow.getBoundingClientRect();
+          const insertBefore = clientY < rect.top + rect.height / 2;
+          const nextNode = insertBefore ? targetRow : targetRow.nextSibling;
+          if (draggingRow.nextSibling === nextNode) {
+            return;
+          }
+          listEl.insertBefore(draggingRow, nextNode);
+          movedByDrag = true;
+          renumber();
+        };
+        const finalizeReorder = () => {
+          if (movedByDrag) {
+            renumber();
+            notifyReordered();
+          }
+          movedByDrag = false;
+        };
+        const wireDnD = (row) => {
+          const handle = row.querySelector('[data-role="dragHandle"]');
+          handle.addEventListener('dragstart', (event) => {
+            draggingRow = row;
+            movedByDrag = false;
+            row.classList.add('dragging');
+            if (event.dataTransfer) {
+              event.dataTransfer.effectAllowed = 'move';
+              try {
+                event.dataTransfer.setData('text/plain', 'operation');
+              } catch {
+                // noop
+              }
+            }
+          });
+          handle.addEventListener('dragend', () => {
+            row.classList.remove('dragging');
+            finalizeReorder();
+            draggingRow = null;
+          });
+          row.addEventListener('dragover', (event) => {
+            if (!draggingRow || draggingRow === row) {
+              return;
+            }
+            event.preventDefault();
+            moveRowIfNeeded(row, event.clientY);
+          });
+          row.addEventListener('drop', (event) => {
+            if (!draggingRow) {
+              return;
+            }
+            event.preventDefault();
+            finalizeReorder();
+          });
+        };
         const add = (value = '') => {
           const row = document.createElement('div');
-          row.className = 'listRow';
+          row.className = 'listRow operationsRow';
           row.setAttribute('data-role', 'list-row');
-          row.innerHTML = '<span data-role="index">1.</span><input data-role="value" value="' + esc(value) + '" /><button class="secondary" type="button" data-role="remove">Remove</button>';
-          row.querySelector('[data-role="remove"]').addEventListener('click', () => { row.remove(); renumber(); });
+          row.innerHTML =
+            '<button class="dragHandle" type="button" data-role="dragHandle" draggable="true" aria-label="Drag to reorder operation" title="Drag to reorder">⋮⋮</button>' +
+            '<span data-role="index">1.</span>' +
+            '<input data-role="value" value="' + esc(value) + '" />' +
+            '<button class="secondary" type="button" data-role="remove">Remove</button>';
+          row.querySelector('[data-role="remove"]').addEventListener('click', () => {
+            row.remove();
+            renumber();
+          });
+          wireDnD(row);
           listEl.appendChild(row);
           renumber();
         };
+        listEl.addEventListener('dragover', (event) => {
+          if (!draggingRow) {
+            return;
+          }
+          event.preventDefault();
+          const rows = Array.from(listEl.querySelectorAll('[data-role="list-row"]'));
+          const last = rows[rows.length - 1];
+          if (last && draggingRow !== last) {
+            const rect = last.getBoundingClientRect();
+            if (event.clientY >= rect.bottom) {
+              listEl.appendChild(draggingRow);
+              movedByDrag = true;
+              renumber();
+            }
+          }
+        });
+        listEl.addEventListener('drop', (event) => {
+          if (!draggingRow) {
+            return;
+          }
+          event.preventDefault();
+          finalizeReorder();
+        });
         for (const v of values || []) add(v);
         return {
           add,
