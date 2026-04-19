@@ -169,6 +169,7 @@ describe("webviews html", () => {
   it("contains manager sections", () => {
     const html = managerHtml();
     expect(html).toContain("Suite Burndown");
+    expect(html).toContain("All cases");
     expect(html).toContain("Case Editor");
     expect(html).toContain("saveState");
     expect(html).toContain("chartTooltip");

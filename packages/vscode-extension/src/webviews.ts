@@ -659,7 +659,7 @@ export function managerHtml(): string {
         white-space: pre-line;
       }
       .chartTooltip.hidden { display: none; }
-      .chartKpis { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
+      .chartKpis { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
       .chartKpi {
         border: 1px solid var(--surface-edge);
         border-radius: 8px;
@@ -1113,6 +1113,7 @@ export function managerHtml(): string {
             '<div class="chartTooltip hidden" data-role="chartTooltip" aria-live="polite"></div>' +
           '</div>' +
           '<div class="chartKpis">' +
+            '<div class="chartKpi"><div class="chartKpiLabel">All cases</div><div class="chartKpiValue">' + String(totalCases) + '</div></div>' +
             '<div class="chartKpi"><div class="chartKpiLabel">Remaining cases</div><div class="chartKpiValue">' + String(finalRemaining) + '</div></div>' +
             '<div class="chartKpi"><div class="chartKpiLabel">Completed cases</div><div class="chartKpiValue">' + String(completedCases) + '</div></div>' +
             '<div class="chartKpi"><div class="chartKpiLabel">Progress rate</div><div class="chartKpiValue">' + progressRate + '%</div></div>' +

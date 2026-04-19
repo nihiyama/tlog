@@ -127,6 +127,22 @@
       {
         "command": "tlog.deleteNode",
         "title": "Delete"
+      },
+      {
+        "command": "tlog.expandAllSuites",
+        "title": "Expand all",
+        "icon": {
+          "light": "media/chevrons-down.svg",
+          "dark": "media/chevrons-down.svg"
+        }
+      },
+      {
+        "command": "tlog.collapseAllSuites",
+        "title": "Collapse all",
+        "icon": {
+          "light": "media/chevrons-up.svg",
+          "dark": "media/chevrons-up.svg"
+        }
       }
     ],
     "configuration": [
@@ -171,6 +187,18 @@
           "command": "tlog.deleteNode",
           "when": "view == tlog.tree && (viewItem == suite || viewItem == case)",
           "group": "navigation@3"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "tlog.expandAllSuites",
+          "when": "view == tlog.tree",
+          "group": "navigation@10"
+        },
+        {
+          "command": "tlog.collapseAllSuites",
+          "when": "view == tlog.tree",
+          "group": "navigation@11"
         }
       ]
     }

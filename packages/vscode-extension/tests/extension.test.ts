@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const registerCommand = vi.fn(() => ({ dispose: vi.fn() }));
@@ -143,6 +146,25 @@ describe("extension lifecycle", () => {
     expect(registerCommand).toHaveBeenCalledWith("tlog.refreshTree", expect.any(Function));
     expect(registerCommand).toHaveBeenCalledWith("tlog.showSuiteStats", expect.any(Function));
     expect(registerCommand).toHaveBeenCalledWith("tlog.openRelated", expect.any(Function));
+  });
+
+  it("reads package manifest contributions for suites toolbar actions", () => {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const manifestPath = resolve(testDir, "../package.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      contributes?: {
+        commands?: Array<{ command: string }>;
+        menus?: { "view/title"?: Array<{ command: string; when?: string }> };
+      };
+    };
+
+    const commands = manifest.contributes?.commands ?? [];
+    expect(commands.some((item) => item.command === "tlog.expandAllSuites")).toBe(true);
+    expect(commands.some((item) => item.command === "tlog.collapseAllSuites")).toBe(true);
+
+    const titleMenus = manifest.contributes?.menus?.["view/title"] ?? [];
+    expect(titleMenus.some((item) => item.command === "tlog.expandAllSuites" && item.when === "view == tlog.tree")).toBe(true);
+    expect(titleMenus.some((item) => item.command === "tlog.collapseAllSuites" && item.when === "view == tlog.tree")).toBe(true);
   });
 
   it("exports deactivate", () => {
