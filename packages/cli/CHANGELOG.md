@@ -1,5 +1,18 @@
 # @tlog/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- 577aac0: Release v0.3.0 across shared, CLI, MCP, and VS Code extension.
+
+  This release includes search/filter consistency improvements, Suite Burndown enhancements, suite tree UX updates, and related fixes/features.
+
+### Patch Changes
+
+- Updated dependencies [577aac0]
+  - @tlog/shared@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
