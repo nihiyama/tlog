@@ -169,11 +169,14 @@ describe("webviews html", () => {
   it("contains manager sections", () => {
     const html = managerHtml();
     expect(html).toContain("Suite Burndown");
+    expect(html).toContain("All cases");
     expect(html).toContain("Case Editor");
     expect(html).toContain("saveState");
     expect(html).toContain("chartTooltip");
     expect(html).toContain("deriveCaseDraftFields");
     expect(html).toContain("allTestsPass");
+    expect(html).toContain("Drag to reorder operation");
+    expect(html).toContain("dragHandle");
     expect(html).toContain("statusEl.value = 'done'");
   });
 });
