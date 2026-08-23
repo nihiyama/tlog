@@ -3,7 +3,17 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createCase, createSuite, findSuiteFiles, getWorkspaceSnapshot, loadTree, parseYamlDocument, updateCase } from "../src/tlog-workspace.js";
+import {
+  assignSuiteStatuses,
+  createCase,
+  createSuite,
+  findSuiteFiles,
+  getWorkspaceSnapshot,
+  loadTree,
+  parseYamlDocument,
+  type TreeNodeModel,
+  updateCase
+} from "../src/tlog-workspace.js";
 
 const IS_COVERAGE_RUN = process.env.VITEST_COVERAGE === "true" || process.env.npm_lifecycle_event === "test:coverage";
 const PERF_THRESHOLD_MS = IS_COVERAGE_RUN ? 4500 : 2000;
@@ -58,6 +68,76 @@ describe("tlog workspace", () => {
     const tree = await loadTree(root);
     expect(tree.some((node) => node.type === "suite" && node.id === "suite-root")).toBe(true);
     expect(tree.some((node) => node.type === "case" && node.id === "case-a")).toBe(true);
+  });
+
+  it("classifies direct case combinations into suite display statuses", () => {
+    const evaluate = (statuses: Array<"todo" | "doing" | "done" | null>) => {
+      const nodes: TreeNodeModel[] = [
+        { id: "suite", label: "Suite", type: "suite", path: "/tests/index.yaml" },
+        ...statuses.map((status, index) => ({
+          id: "case-" + index,
+          label: "Case",
+          type: "case" as const,
+          path: "/tests/case-" + index + ".yaml",
+          parentPath: "/tests/index.yaml",
+          status
+        }))
+      ];
+
+      assignSuiteStatuses(nodes);
+      return nodes[0]?.suiteStatus;
+    };
+
+    expect(evaluate([])).toBe("default");
+    expect(evaluate(["todo"])).toBe("default");
+    expect(evaluate([null])).toBe("default");
+    expect(evaluate(["doing"])).toBe("doing");
+    expect(evaluate(["todo", "done"])).toBe("doing");
+    expect(evaluate(["doing", "done"])).toBe("doing");
+    expect(evaluate(["done"])).toBe("done");
+  });
+
+  it("propagates descendant case statuses through nested suites", () => {
+    const nodes: TreeNodeModel[] = [
+      { id: "root", label: "Root", type: "suite", path: "/tests/index.yaml" },
+      { id: "child", label: "Child", type: "suite", path: "/tests/child/index.yaml", parentPath: "/tests/index.yaml" },
+      {
+        id: "grandchild",
+        label: "Grandchild",
+        type: "suite",
+        path: "/tests/child/grandchild/index.yaml",
+        parentPath: "/tests/child/index.yaml"
+      },
+      {
+        id: "case-done",
+        label: "Done",
+        type: "case",
+        path: "/tests/child/grandchild/case-done.yaml",
+        parentPath: "/tests/child/grandchild/index.yaml",
+        status: "done"
+      }
+    ];
+
+    assignSuiteStatuses(nodes);
+    expect(nodes.filter((node) => node.type === "suite").map((node) => node.suiteStatus)).toEqual([
+      "done",
+      "done",
+      "done"
+    ]);
+
+    nodes.push({
+      id: "case-todo",
+      label: "Todo",
+      type: "case",
+      path: "/tests/child/case-todo.yaml",
+      parentPath: "/tests/child/index.yaml",
+      status: "todo"
+    });
+    assignSuiteStatuses(nodes);
+
+    expect(nodes.find((node) => node.id === "root")?.suiteStatus).toBe("doing");
+    expect(nodes.find((node) => node.id === "child")?.suiteStatus).toBe("doing");
+    expect(nodes.find((node) => node.id === "grandchild")?.suiteStatus).toBe("done");
   });
 
   it("creates suite and case files with id-based naming", async () => {

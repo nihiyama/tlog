@@ -44,12 +44,17 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
       light: this.vscodeApi.Uri.joinPath(context.extensionUri, "media", name),
       dark: this.vscodeApi.Uri.joinPath(context.extensionUri, "media", name)
     });
+    const themedIcon = (lightName: string, darkName: string) => ({
+      light: this.vscodeApi.Uri.joinPath(context.extensionUri, "media", lightName),
+      dark: this.vscodeApi.Uri.joinPath(context.extensionUri, "media", darkName)
+    });
     this.iconPaths = {
       caseTodo: icon("status-todo.svg"),
-      caseDoing: icon("status-doing.svg"),
-      caseDone: icon("status-done.svg"),
-      suiteAllDone: icon("suite-all-done.svg"),
-      suiteNotAllDone: icon("suite-not-all-done.svg"),
+      caseDoing: themedIcon("status-doing-light.svg", "status-doing.svg"),
+      caseDone: themedIcon("status-done-light.svg", "status-done.svg"),
+      suiteDefault: icon("suite-not-all-done.svg"),
+      suiteDoing: themedIcon("suite-doing-light.svg", "suite-doing.svg"),
+      suiteDone: themedIcon("suite-all-done-light.svg", "suite-all-done.svg"),
       createSuite: icon("new-folder.svg")
     };
   }
@@ -148,7 +153,13 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
       }
     }
     if (element.type === "suite") {
-      item.iconPath = element.suiteAllDone ? this.iconPaths.suiteAllDone : this.iconPaths.suiteNotAllDone;
+      if (element.suiteStatus === "done") {
+        item.iconPath = this.iconPaths.suiteDone;
+      } else if (element.suiteStatus === "doing") {
+        item.iconPath = this.iconPaths.suiteDoing;
+      } else {
+        item.iconPath = this.iconPaths.suiteDefault;
+      }
     }
     if (element.type === "guide" && element.id === "guide-create-new") {
       item.iconPath = this.iconPaths.createSuite;

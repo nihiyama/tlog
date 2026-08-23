@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   type IdIndex,
@@ -19,6 +19,7 @@ import {
 } from "@tlog/shared";
 
 export type NodeType = "suite" | "case" | "guide";
+export type SuiteStatus = "default" | "doing" | "done";
 
 export interface TreeNodeModel {
   id: string;
@@ -28,7 +29,13 @@ export interface TreeNodeModel {
   parentPath?: string;
   description?: string;
   status?: TestCase["status"];
-  suiteAllDone?: boolean;
+  suiteStatus?: SuiteStatus;
+}
+
+interface SuiteStatusCounts {
+  todo: number;
+  doing: number;
+  done: number;
 }
 
 export interface SuiteCard {
@@ -100,6 +107,91 @@ async function findCaseFiles(dir: string): Promise<string[]> {
     .sort();
 }
 
+function addStatusCounts(target: SuiteStatusCounts, source: SuiteStatusCounts): void {
+  target.todo += source.todo;
+  target.doing += source.doing;
+  target.done += source.done;
+}
+
+function toSuiteStatus(counts: SuiteStatusCounts): SuiteStatus {
+  const total = counts.todo + counts.doing + counts.done;
+  if (total === 0) {
+    return "default";
+  }
+  if (counts.doing > 0 || (counts.todo > 0 && counts.done > 0)) {
+    return "doing";
+  }
+  return counts.done === total ? "done" : "default";
+}
+
+export function assignSuiteStatuses(nodes: TreeNodeModel[]): void {
+  const suitesByPath = new Map(
+    nodes.filter((node) => node.type === "suite").map((node) => [node.path, node] as const)
+  );
+  const countsBySuitePath = new Map<string, SuiteStatusCounts>();
+  const remainingChildrenBySuitePath = new Map<string, number>();
+
+  for (const suitePath of suitesByPath.keys()) {
+    countsBySuitePath.set(suitePath, { todo: 0, doing: 0, done: 0 });
+    remainingChildrenBySuitePath.set(suitePath, 0);
+  }
+
+  for (const node of nodes) {
+    if (node.type === "suite" && node.parentPath && suitesByPath.has(node.parentPath)) {
+      remainingChildrenBySuitePath.set(
+        node.parentPath,
+        (remainingChildrenBySuitePath.get(node.parentPath) ?? 0) + 1
+      );
+      continue;
+    }
+    if (node.type !== "case" || !node.parentPath) {
+      continue;
+    }
+    const counts = countsBySuitePath.get(node.parentPath);
+    if (!counts) {
+      continue;
+    }
+    if (node.status === "doing") {
+      counts.doing += 1;
+    } else if (node.status === "done") {
+      counts.done += 1;
+    } else {
+      counts.todo += 1;
+    }
+  }
+
+  const pendingSuitePaths = [...remainingChildrenBySuitePath.entries()]
+    .filter(([, remainingChildren]) => remainingChildren === 0)
+    .map(([suitePath]) => suitePath);
+
+  while (pendingSuitePaths.length > 0) {
+    const suitePath = pendingSuitePaths.pop();
+    if (!suitePath) {
+      continue;
+    }
+    const suiteNode = suitesByPath.get(suitePath);
+    const counts = countsBySuitePath.get(suitePath);
+    if (!suiteNode || !counts) {
+      continue;
+    }
+
+    suiteNode.suiteStatus = toSuiteStatus(counts);
+    if (!suiteNode.parentPath || !suitesByPath.has(suiteNode.parentPath)) {
+      continue;
+    }
+
+    const parentCounts = countsBySuitePath.get(suiteNode.parentPath);
+    if (parentCounts) {
+      addStatusCounts(parentCounts, counts);
+    }
+    const remainingChildren = (remainingChildrenBySuitePath.get(suiteNode.parentPath) ?? 1) - 1;
+    remainingChildrenBySuitePath.set(suiteNode.parentPath, remainingChildren);
+    if (remainingChildren === 0) {
+      pendingSuitePaths.push(suiteNode.parentPath);
+    }
+  }
+}
+
 export async function loadTree(rootDir: string): Promise<TreeNodeModel[]> {
   const suiteFiles = await findSuiteFiles(rootDir);
   if (suiteFiles.length === 0) {
@@ -158,23 +250,7 @@ export async function loadTree(rootDir: string): Promise<TreeNodeModel[]> {
     }
   }
 
-  const casesBySuitePath = new Map<string, TreeNodeModel[]>();
-  for (const node of nodes) {
-    if (node.type !== "case" || !node.parentPath) {
-      continue;
-    }
-    const items = casesBySuitePath.get(node.parentPath) ?? [];
-    items.push(node);
-    casesBySuitePath.set(node.parentPath, items);
-  }
-
-  for (const node of nodes) {
-    if (node.type !== "suite") {
-      continue;
-    }
-    const suiteCases = casesBySuitePath.get(node.path) ?? [];
-    node.suiteAllDone = suiteCases.length > 0 && suiteCases.every((item) => item.status === "done");
-  }
+  assignSuiteStatuses(nodes);
 
   return nodes;
 }
