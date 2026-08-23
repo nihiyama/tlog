@@ -1,0 +1,21 @@
+{
+  "views.controls": "Controls",
+  "views.suites": "Suites",
+  "commands.selectRoot": "TLog: Set Root",
+  "commands.searchTags": "TLog: Search Tags",
+  "commands.searchOwners": "TLog: Search Owners",
+  "commands.clearSearch": "TLog: Clear Search",
+  "commands.openManager": "TLog: Open Manager",
+  "commands.refreshTree": "TLog: Refresh Tree",
+  "commands.createSuite": "Create Suite",
+  "commands.createCase": "Create Case",
+  "commands.filterCases": "TLog: Filter Cases",
+  "commands.showSuiteStats": "TLog: Show Suite Statistics",
+  "commands.openRelated": "TLog: Open Related",
+  "commands.openRawYaml": "Open YAML",
+  "commands.deleteNode": "Delete",
+  "commands.expandAllSuites": "Expand all",
+  "commands.collapseAllSuites": "Collapse all",
+  "customEditors.manager": "TLog Manager",
+  "configuration.scopeMode.description": "Controls whether suite operations include descendant suites."
+}

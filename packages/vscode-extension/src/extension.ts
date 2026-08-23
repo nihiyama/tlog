@@ -13,17 +13,32 @@ import {
   resolveRelatedIds,
   syncReciprocalRelated
 } from "./tlog-workspace.js";
-import { defaultTreeFilters, matchCaseWithFilters, normalizeTreeFilters, type TreeFilters } from "./filters.js";
-import { applyManagerEdit, getManagerDocumentRelated, type ManagerEditMessage } from "./manager-document.js";
+import {
+  defaultTreeFilters,
+  matchCaseWithFilters,
+  normalizeTreeFilters,
+  type TreeFilters
+} from "./filters.js";
+import {
+  applyManagerEdit,
+  getManagerDocumentRelated,
+  type ManagerEditMessage
+} from "./manager-document.js";
 import { directoryExists, isInsideRoot, pickRootPath } from "./path-utils.js";
 import { splitCsv } from "./string-utils.js";
 import { TlogTreeDataProvider } from "./tree-provider.js";
 import { controlsHtml, managerHtml } from "./webviews.js";
+import { identityTranslate, type Translate } from "./localization.js";
 
 const ROOT_KEY = "tlog.rootDirectory";
 const FILTER_KEY = "tlog.treeFilters";
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 const MANAGER_VIEW_TYPE = "tlog.manager";
+
+function createTranslate(vscodeApi: typeof vscode): Translate {
+  return (message, ...args) =>
+    vscodeApi.l10n?.t?.(message, ...args) ?? identityTranslate(message, ...args);
+}
 
 type ControlsMessage =
   | { type: "ready" }
@@ -90,7 +105,9 @@ interface RelatedOption {
   entityType: "suite" | "case";
 }
 
-function buildRelatedOptions(snapshot: Awaited<ReturnType<typeof getWorkspaceSnapshot>>): RelatedOption[] {
+function buildRelatedOptions(
+  snapshot: Awaited<ReturnType<typeof getWorkspaceSnapshot>>
+): RelatedOption[] {
   const options: RelatedOption[] = [];
   for (const suite of snapshot.suites) {
     options.push({
@@ -133,7 +150,10 @@ async function postSnapshot(
   document?: vscode.TextDocument
 ): Promise<void> {
   if (!rootDirectory) {
-    await panel.webview.postMessage({ type: "snapshot", payload: { root: "", suites: [], cases: [] } });
+    await panel.webview.postMessage({
+      type: "snapshot",
+      payload: { root: "", suites: [], cases: [] }
+    });
     return;
   }
 
@@ -147,9 +167,13 @@ async function postSnapshot(
   const allSnapshot = await getWorkspaceSnapshot(rootDirectory);
   const filteredCases = snapshot.cases.filter((item) => matchCaseWithFilters(item, filters));
   const selectedSuiteCard =
-    selection?.type === "suite" ? allSnapshot.suites.find((suite) => suite.path === selection.path) ?? null : null;
+    selection?.type === "suite"
+      ? (allSnapshot.suites.find((suite) => suite.path === selection.path) ?? null)
+      : null;
   const selectedCaseCard =
-    selection?.type === "case" ? allSnapshot.cases.find((item) => item.path === selection.path) ?? null : null;
+    selection?.type === "case"
+      ? (allSnapshot.cases.find((item) => item.path === selection.path) ?? null)
+      : null;
   const relatedOptions = buildRelatedOptions(allSnapshot);
   const relatedRefById = relatedOptions.reduce<Record<string, string>>((acc, item) => {
     if (!acc[item.id]) {
@@ -180,7 +204,12 @@ async function postSnapshot(
           suiteId: selectedCaseCard.suiteId,
           suiteOwners: selectedCaseCard.suiteOwners,
           suiteTags: selectedCaseCard.suiteTags
-        } as TestCase & { path: string; suiteId?: string; suiteOwners: string[]; suiteTags: string[] })
+        } as TestCase & {
+          path: string;
+          suiteId?: string;
+          suiteOwners: string[];
+          suiteTags: string[];
+        })
       : null;
   const filteredCasePaths = new Set(filteredCases.map((item) => item.path));
   const suiteCases =
@@ -272,14 +301,24 @@ function registerDiagnostics(vscodeApi: typeof vscode, context: vscode.Extension
       collection.set(document.uri, diagnostics);
     } catch (error) {
       collection.set(document.uri, [
-        new vscodeApi.Diagnostic(new vscodeApi.Range(0, 0, 0, 1), String(error), vscodeApi.DiagnosticSeverity.Error)
+        new vscodeApi.Diagnostic(
+          new vscodeApi.Range(0, 0, 0, 1),
+          String(error),
+          vscodeApi.DiagnosticSeverity.Error
+        )
       ]);
     }
   }
 
-  context.subscriptions.push(vscodeApi.workspace.onDidOpenTextDocument((doc) => void validateDocument(doc)));
-  context.subscriptions.push(vscodeApi.workspace.onDidSaveTextDocument((doc) => void validateDocument(doc)));
-  context.subscriptions.push(vscodeApi.workspace.onDidChangeTextDocument((event) => void validateDocument(event.document)));
+  context.subscriptions.push(
+    vscodeApi.workspace.onDidOpenTextDocument((doc) => void validateDocument(doc))
+  );
+  context.subscriptions.push(
+    vscodeApi.workspace.onDidSaveTextDocument((doc) => void validateDocument(doc))
+  );
+  context.subscriptions.push(
+    vscodeApi.workspace.onDidChangeTextDocument((event) => void validateDocument(event.document))
+  );
 }
 
 async function openManager(
@@ -289,6 +328,7 @@ async function openManager(
   selectedNode?: TreeNodeModel,
   onSelectionChanged?: (path: string) => Promise<void>
 ): Promise<void> {
+  const t = createTranslate(vscodeApi);
   let root = provider.getRootDirectory();
   if (!root) {
     root = await pickRootPath(vscodeApi);
@@ -298,7 +338,7 @@ async function openManager(
   }
 
   if (!selectedNode || (selectedNode.type !== "suite" && selectedNode.type !== "case")) {
-    vscodeApi.window.showErrorMessage("Select a suite or case first.");
+    vscodeApi.window.showErrorMessage(t("Select a suite or case first."));
     return;
   }
 
@@ -331,6 +371,8 @@ function registerManagerCustomEditor(
   context: vscode.ExtensionContext,
   provider: TlogTreeDataProvider
 ): void {
+  const t = createTranslate(vscodeApi);
+  const language = vscodeApi.env?.language ?? "en";
   const sessions = new Set<ManagerEditorSession>();
 
   const postSessionSnapshot = async (session: ManagerEditorSession): Promise<void> => {
@@ -364,15 +406,22 @@ function registerManagerCustomEditor(
           const session: ManagerEditorSession = {
             document,
             panel,
-            selection: { type: managerDocumentType(document.uri.fsPath), path: document.uri.fsPath },
+            selection: {
+              type: managerDocumentType(document.uri.fsPath),
+              path: document.uri.fsPath
+            },
             pendingOperations: Promise.resolve(),
             relatedOptions,
             rootDirectory
           };
           sessions.add(session);
-          panel.iconPath = vscodeApi.Uri.joinPath(context.extensionUri, "media", "manager-tab-icon.svg");
+          panel.iconPath = vscodeApi.Uri.joinPath(
+            context.extensionUri,
+            "media",
+            "manager-tab-icon.svg"
+          );
           panel.webview.options = { enableScripts: true };
-          panel.webview.html = managerHtml();
+          panel.webview.html = managerHtml(t, language);
           panel.onDidDispose(() => {
             sessions.delete(session);
           });
@@ -388,7 +437,7 @@ function registerManagerCustomEditor(
                   await panel.webview.postMessage({ type: "saving" });
                   const saved = await document.save();
                   if (!saved) {
-                    throw new Error("VS Code could not save the TLog document.");
+                    throw new Error(t("VS Code could not save the TLog document."));
                   }
                   await panel.webview.postMessage({ type: "saved" });
                   return;
@@ -399,7 +448,10 @@ function registerManagerCustomEditor(
                   return;
                 }
                 if (message.type === "openRaw") {
-                  await vscodeApi.commands.executeCommand("vscode.open", vscodeApi.Uri.file(message.path));
+                  await vscodeApi.commands.executeCommand(
+                    "vscode.open",
+                    vscodeApi.Uri.file(message.path)
+                  );
                   return;
                 }
                 if (message.type === "jumpToCase" || message.type === "jumpToPath") {
@@ -427,7 +479,7 @@ function registerManagerCustomEditor(
                   );
                   const applied = await vscodeApi.workspace.applyEdit(edit);
                   if (!applied) {
-                    throw new Error("VS Code could not apply the TLog edit.");
+                    throw new Error(t("VS Code could not apply the TLog edit."));
                   }
                   await panel.webview.postMessage({ type: "dirty" });
                 }
@@ -477,8 +529,10 @@ function registerManagerCustomEditor(
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const vscodeApi = await import("vscode");
+  const t = createTranslate(vscodeApi);
+  const language = vscodeApi.env?.language ?? "en";
   await context.workspaceState.update(FILTER_KEY, defaultTreeFilters());
-  const provider = new TlogTreeDataProvider(vscodeApi, context, ROOT_KEY, FILTER_KEY);
+  const provider = new TlogTreeDataProvider(vscodeApi, context, ROOT_KEY, FILTER_KEY, t);
   registerManagerCustomEditor(vscodeApi, context, provider);
   const tree = vscodeApi.window.createTreeView("tlog.tree", { treeDataProvider: provider });
   context.subscriptions.push(tree);
@@ -492,7 +546,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!target) {
       return false;
     }
-    await tree.reveal(target, { select: true, focus: true, expand: target.type === "suite" ? 1 : 0 });
+    await tree.reveal(target, {
+      select: true,
+      focus: true,
+      expand: target.type === "suite" ? 1 : 0
+    });
     return true;
   };
 
@@ -502,7 +560,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
 
-    const currentFilters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
+    const currentFilters = normalizeTreeFilters(
+      context.workspaceState.get<TreeFilters>(FILTER_KEY)
+    );
     if (currentFilters.tags.length === 0 && currentFilters.owners.length === 0) {
       return;
     }
@@ -510,7 +570,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const cleared: TreeFilters = defaultTreeFilters();
     await context.workspaceState.update(FILTER_KEY, cleared);
     await refreshAllViews();
-    await postControlsState(provider.getRootDirectory(), cleared, "Search cleared to show created item");
+    await postControlsState(
+      provider.getRootDirectory(),
+      cleared,
+      t("Search cleared to show created item")
+    );
     await revealNodeByPath(path);
   };
 
@@ -532,7 +596,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       resolveWebviewView(webviewView) {
         controlsView = webviewView;
         webviewView.webview.options = { enableScripts: true };
-        webviewView.webview.html = controlsHtml();
+        webviewView.webview.html = controlsHtml(t, language);
 
         webviewView.onDidDispose(() => {
           controlsView = undefined;
@@ -540,7 +604,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         webviewView.webview.onDidReceiveMessage((message: ControlsMessage) => {
           void (async () => {
-            const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
+            const filters = normalizeTreeFilters(
+              context.workspaceState.get<TreeFilters>(FILTER_KEY)
+            );
 
             if (message.type === "ready") {
               await postControlsState(provider.getRootDirectory(), filters);
@@ -553,17 +619,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
               }
               await provider.setRootDirectory(root);
-              await postControlsState(provider.getRootDirectory(), filters, `Root: ${root}`);
+              await postControlsState(provider.getRootDirectory(), filters, t("Root: {0}", root));
               return;
             }
 
             if (message.type === "setRoot") {
               if (!message.path || !(await directoryExists(message.path))) {
-                await postControlsState(provider.getRootDirectory(), filters, `Invalid root: ${message.path}`);
+                await postControlsState(
+                  provider.getRootDirectory(),
+                  filters,
+                  t("Invalid root: {0}", message.path)
+                );
                 return;
               }
               await provider.setRootDirectory(message.path);
-              await postControlsState(provider.getRootDirectory(), filters, `Root: ${message.path}`);
+              await postControlsState(
+                provider.getRootDirectory(),
+                filters,
+                t("Root: {0}", message.path)
+              );
               return;
             }
 
@@ -578,7 +652,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               };
               await context.workspaceState.update(FILTER_KEY, next);
               await provider.refresh();
-              await postControlsState(provider.getRootDirectory(), next, "Search applied");
+              await postControlsState(provider.getRootDirectory(), next, t("Search applied"));
               return;
             }
 
@@ -586,7 +660,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               const next: TreeFilters = defaultTreeFilters();
               await context.workspaceState.update(FILTER_KEY, next);
               await provider.refresh();
-              await postControlsState(provider.getRootDirectory(), next, "Search cleared");
+              await postControlsState(provider.getRootDirectory(), next, t("Search cleared"));
             }
           })();
         });
@@ -604,7 +678,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await provider.setRootDirectory(root);
       const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
-      await postControlsState(provider.getRootDirectory(), filters, `Root: ${root}`);
+      await postControlsState(provider.getRootDirectory(), filters, t("Root: {0}", root));
     })
   );
 
@@ -612,7 +686,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscodeApi.commands.registerCommand("tlog.searchTags", async () => {
       const current = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
       const input = await vscodeApi.window.showInputBox({
-        prompt: "Search tags (comma separated)",
+        prompt: t("Search tags (comma separated)"),
         value: current.tags.join(",")
       });
       if (input === undefined) {
@@ -621,7 +695,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       current.tags = splitCsv(input);
       await context.workspaceState.update(FILTER_KEY, current);
       await provider.refresh();
-      await postControlsState(provider.getRootDirectory(), current, "Search applied");
+      await postControlsState(provider.getRootDirectory(), current, t("Search applied"));
     })
   );
 
@@ -629,7 +703,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscodeApi.commands.registerCommand("tlog.searchOwners", async () => {
       const current = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
       const input = await vscodeApi.window.showInputBox({
-        prompt: "Search owners (comma separated)",
+        prompt: t("Search owners (comma separated)"),
         value: current.owners.join(",")
       });
       if (input === undefined) {
@@ -638,7 +712,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       current.owners = splitCsv(input);
       await context.workspaceState.update(FILTER_KEY, current);
       await provider.refresh();
-      await postControlsState(provider.getRootDirectory(), current, "Search applied");
+      await postControlsState(provider.getRootDirectory(), current, t("Search applied"));
     })
   );
 
@@ -646,7 +720,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscodeApi.commands.registerCommand("tlog.clearSearch", async () => {
       await context.workspaceState.update(FILTER_KEY, defaultTreeFilters());
       await provider.refresh();
-      await postControlsState(provider.getRootDirectory(), defaultTreeFilters(), "Search cleared");
+      await postControlsState(
+        provider.getRootDirectory(),
+        defaultTreeFilters(),
+        t("Search cleared")
+      );
     })
   );
 
@@ -654,23 +732,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscodeApi.commands.registerCommand("tlog.createSuite", async (node?: TreeNodeModel) => {
       const root = provider.getRootDirectory();
       if (!root) {
-        vscodeApi.window.showErrorMessage("Set root first.");
+        vscodeApi.window.showErrorMessage(t("Set root first."));
         return;
       }
 
-      const id = await vscodeApi.window.showInputBox({ prompt: "Suite ID" });
-      const title = await vscodeApi.window.showInputBox({ prompt: "Suite title" });
+      const id = await vscodeApi.window.showInputBox({ prompt: t("Suite ID") });
+      const title = await vscodeApi.window.showInputBox({ prompt: t("Suite title") });
       if (!id || !title) {
         return;
       }
       if (!isValidEntityId(id)) {
-        vscodeApi.window.showErrorMessage("ID must contain only alphanumeric characters, '-' or '_'.");
+        vscodeApi.window.showErrorMessage(
+          t("ID must contain only alphanumeric characters, '-' or '_'.")
+        );
         return;
       }
 
       const index = await buildWorkspaceIdIndex(root);
       if (index.byId.has(id)) {
-        vscodeApi.window.showErrorMessage(`Duplicate ID: ${id}`);
+        vscodeApi.window.showErrorMessage(t("Duplicate ID: {0}", id));
         return;
       }
 
@@ -685,23 +765,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscodeApi.commands.registerCommand("tlog.createCase", async (node?: TreeNodeModel) => {
       const root = provider.getRootDirectory();
       if (!root) {
-        vscodeApi.window.showErrorMessage("Set root first.");
+        vscodeApi.window.showErrorMessage(t("Set root first."));
         return;
       }
 
-      const id = await vscodeApi.window.showInputBox({ prompt: "Case ID" });
-      const title = await vscodeApi.window.showInputBox({ prompt: "Case title" });
+      const id = await vscodeApi.window.showInputBox({ prompt: t("Case ID") });
+      const title = await vscodeApi.window.showInputBox({ prompt: t("Case title") });
       if (!id || !title) {
         return;
       }
       if (!isValidEntityId(id)) {
-        vscodeApi.window.showErrorMessage("ID must contain only alphanumeric characters, '-' or '_'.");
+        vscodeApi.window.showErrorMessage(
+          t("ID must contain only alphanumeric characters, '-' or '_'.")
+        );
         return;
       }
 
       const index = await buildWorkspaceIdIndex(root);
       if (index.byId.has(id)) {
-        vscodeApi.window.showErrorMessage(`Duplicate ID: ${id}`);
+        vscodeApi.window.showErrorMessage(t("Duplicate ID: {0}", id));
         return;
       }
 
@@ -711,7 +793,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           .getNodes()
           .filter((n) => n.type === "suite")
           .map((n) => ({ label: n.label, description: n.path, value: dirname(n.path) }));
-        const selected = await vscodeApi.window.showQuickPick(suites, { placeHolder: "Select suite directory for new case" });
+        const selected = await vscodeApi.window.showQuickPick(suites, {
+          placeHolder: t("Select suite directory for new case")
+        });
         if (!selected) {
           return;
         }
@@ -756,13 +840,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscodeApi.commands.registerCommand("tlog.showSuiteStats", async (node: TreeNodeModel) => {
       if (!node || node.type !== "suite") {
-        vscodeApi.window.showErrorMessage("Select suite node.");
+        vscodeApi.window.showErrorMessage(t("Select suite node."));
         return;
       }
 
       const root = provider.getRootDirectory();
       if (!root) {
-        vscodeApi.window.showErrorMessage("Set root first.");
+        vscodeApi.window.showErrorMessage(t("Set root first."));
         return;
       }
 
@@ -770,7 +854,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const start = suite.duration?.scheduled?.start;
       const end = suite.duration?.scheduled?.end;
       if (!start || !end) {
-        vscodeApi.window.showWarningMessage("scheduled.start/end is missing");
+        vscodeApi.window.showWarningMessage(t("scheduled.start/end is missing"));
         return;
       }
 
@@ -794,10 +878,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           .map(async (item) => parseYaml<TestCase>(await readFile(item.path, "utf8")))
       );
 
-
       const stats = calculateBurndown(cases, start, end);
       vscodeApi.window.showInformationMessage(
-        `todo=${stats.summary.todo} doing=${stats.summary.doing} done=${stats.summary.done}`
+        t(
+          "todo={0} doing={1} done={2}",
+          stats.summary.todo,
+          stats.summary.doing,
+          stats.summary.done
+        )
       );
     })
   );
@@ -806,7 +894,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscodeApi.commands.registerCommand("tlog.openRelated", async (node: TreeNodeModel) => {
       const root = provider.getRootDirectory();
       if (!root || !node || node.type === "guide") {
-        vscodeApi.window.showErrorMessage("Select suite/case node first.");
+        vscodeApi.window.showErrorMessage(t("Select suite/case node first."));
         return;
       }
 
@@ -815,11 +903,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const index = await buildWorkspaceIdIndex(root);
       const candidates = resolveRelatedIds(index, related);
       if (candidates.length === 0) {
-        vscodeApi.window.showErrorMessage("No related target found.");
+        vscodeApi.window.showErrorMessage(t("No related target found."));
         return;
       }
 
-      const picked = await vscodeApi.window.showQuickPick(candidates, { placeHolder: "Open related ID" });
+      const picked = await vscodeApi.window.showQuickPick(candidates, {
+        placeHolder: t("Open related ID")
+      });
       if (!picked) {
         return;
       }
@@ -836,7 +926,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscodeApi.commands.registerCommand("tlog.openRawYaml", async (node?: TreeNodeModel) => {
       if (!node || node.type === "guide") {
-        vscodeApi.window.showErrorMessage("Select suite/case node first.");
+        vscodeApi.window.showErrorMessage(t("Select suite/case node first."));
         return;
       }
       await vscodeApi.commands.executeCommand("vscode.open", vscodeApi.Uri.file(node.path));
@@ -846,17 +936,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscodeApi.commands.registerCommand("tlog.deleteNode", async (node?: TreeNodeModel) => {
       if (!node || node.type === "guide") {
-        vscodeApi.window.showErrorMessage("Select suite/case node first.");
+        vscodeApi.window.showErrorMessage(t("Select suite/case node first."));
         return;
       }
 
-      const label = node.type === "suite" ? `suite ${node.id}` : `case ${node.id}`;
+      const label = node.type === "suite" ? t("suite {0}", node.id) : t("case {0}", node.id);
+      const deleteAction = t("Delete");
       const answer = await vscodeApi.window.showWarningMessage(
-        `Delete ${label}?`,
+        t("Delete {0}?", label),
         { modal: true },
-        "Delete"
+        deleteAction
       );
-      if (answer !== "Delete") {
+      if (answer !== deleteAction) {
         return;
       }
 

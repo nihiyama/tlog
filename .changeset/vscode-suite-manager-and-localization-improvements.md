@@ -18,3 +18,10 @@
   - Replace debounce-based auto-save with a VS Code Custom Text Editor.
   - Support explicit save, configured Auto Save, native dirty and close protection, and standard undo/redo.
   - Open one YAML file per TLog Manager tab.
+
+- **Japanese localization and control pane refinements**
+  - Add Japanese translations for VS Code contributions, runtime notifications and prompts, and TLog Webviews, while retaining English as the default and fallback language.
+  - Keep YAML fields, command IDs, configuration keys, and other machine-readable identifiers unchanged across languages.
+  - Document supported languages, VS Code language switching, translation maintenance, and verification procedures.
+  - Improve Webview rendering performance by skipping DOM translation when no localized strings differ and by avoiding duplicate mutation traversal during Japanese localization.
+  - Reduce the font size and padding of the Set Root, Browse, Apply, and Clear all filters buttons in the control pane.

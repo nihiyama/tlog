@@ -14,7 +14,7 @@
 ################################################################################
 
 # Primary model used by Codex. Default: "gpt-5.2-codex" on all platforms.
-model = "gpt-5.3-codex"
+model = "gpt-5.6-sol"
 
 # Default communication style for supported models. Default: "friendly".
 # Allowed values: none | friendly | pragmatic

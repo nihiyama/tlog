@@ -1,4 +1,6 @@
-export function controlsHtml(): string {
+import { identityTranslate, webviewLocalizationScript, type Translate } from "./localization.js";
+
+export function controlsHtml(t: Translate = identityTranslate, language = "en"): string {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -95,6 +97,11 @@ export function controlsHtml(): string {
         background: color-mix(in srgb, var(--surface) 72%, transparent);
         color: var(--vscode-foreground);
         border-color: var(--vscode-input-border);
+      }
+      button.compactAction {
+        padding: 3px 8px;
+        font-size: 11px;
+        line-height: 1.2;
       }
       details {
         margin-top: 10px;
@@ -196,8 +203,8 @@ export function controlsHtml(): string {
       <label class="label" for="rootPath">Root directory</label>
       <input id="rootPath" aria-label="tlog root directory" placeholder="tlog root directory" />
       <div class="row">
-        <button id="setRoot">Set Root</button>
-        <button id="browseRoot" class="secondary">Browse</button>
+        <button id="setRoot" class="compactAction">Set Root</button>
+        <button id="browseRoot" class="secondary compactAction">Browse</button>
       </div>
       <div id="status" aria-live="polite"></div>
     </div>
@@ -288,8 +295,8 @@ export function controlsHtml(): string {
       </div>
 
       <div class="row" style="margin-top:8px;">
-        <button id="applySearch">Apply</button>
-        <button id="clearSearch" class="secondary">Clear all filters</button>
+        <button id="applySearch" class="compactAction">Apply</button>
+        <button id="clearSearch" class="secondary compactAction">Clear all filters</button>
       </div>
     </div>
 
@@ -479,11 +486,12 @@ export function controlsHtml(): string {
 
       vscode.postMessage({ type: "ready" });
     </script>
+    ${webviewLocalizationScript(t, language)}
   </body>
 </html>`;
 }
 
-export function managerHtml(): string {
+export function managerHtml(t: Translate = identityTranslate, language = "en"): string {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -1606,6 +1614,7 @@ export function managerHtml(): string {
 
       vscode.postMessage({ type: 'ready' });
     </script>
+    ${webviewLocalizationScript(t, language)}
   </body>
 </html>`;
 }

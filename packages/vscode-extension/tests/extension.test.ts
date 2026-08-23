@@ -35,6 +35,14 @@ class TreeItem {
 vi.mock(
   "vscode",
   () => ({
+    env: { language: "en" },
+    l10n: {
+      t: (message: string, ...args: Array<string | number | boolean>) =>
+        args.reduce(
+          (text, value, index) => text.replaceAll("{" + index + "}", String(value)),
+          message
+        )
+    },
     commands: {
       registerCommand,
       executeCommand

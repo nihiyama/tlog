@@ -11,12 +11,14 @@ export async function directoryExists(path: string): Promise<boolean> {
 }
 
 export async function pickRootPath(vscodeApi: typeof vscode): Promise<string | undefined> {
+  const selectRootLabel =
+    vscodeApi.l10n?.t?.("Select tlog root directory") ?? "Select tlog root directory";
   const selected = await vscodeApi.window.showOpenDialog({
     canSelectFolders: true,
     canSelectFiles: false,
     canSelectMany: false,
-    openLabel: "Select tlog root directory",
-    title: "Select tlog root directory",
+    openLabel: selectRootLabel,
+    title: selectRootLabel,
     defaultUri: vscodeApi.workspace.workspaceFolders?.[0]?.uri
       ? vscodeApi.Uri.file(join(vscodeApi.workspace.workspaceFolders[0].uri.fsPath))
       : undefined
