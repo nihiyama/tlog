@@ -163,7 +163,6 @@ async function postSnapshot(
   const selection = managerSelection;
   const selectedSuiteCard = selection?.type === "suite" ? snapshot.suites.find((suite) => suite.path === selection.path) ?? null : null;
   const selectedCaseCard = selection?.type === "case" ? filteredCases.find((item) => item.path === selection.path) ?? null : null;
-  const suiteById = new Map(snapshot.suites.map((suite) => [suite.id, suite] as const));
   const relatedOptions = buildRelatedOptions(allSnapshot);
   const relatedRefById = relatedOptions.reduce<Record<string, string>>((acc, item) => {
     if (!acc[item.id]) {
@@ -185,7 +184,7 @@ async function postSnapshot(
           path: selectedCaseCard.path,
           suiteId: selectedCaseCard.suiteId,
           suiteOwners: selectedCaseCard.suiteOwners,
-          suiteTags: selectedCaseCard.suiteId ? (suiteById.get(selectedCaseCard.suiteId)?.tags ?? []) : []
+          suiteTags: selectedCaseCard.suiteTags
         } as TestCase & { path: string; suiteId?: string; suiteOwners: string[]; suiteTags: string[] })
       : null;
   const filteredCasePaths = new Set(filteredCases.map((item) => item.path));
@@ -194,7 +193,11 @@ async function postSnapshot(
       ? await Promise.all(
           allSnapshot.cases
             .filter(
-              (item) => isPathInside(dirname(selectedSuiteCard.path), item.path) && filteredCasePaths.has(item.path)
+              (item) =>
+                isPathInside(dirname(selectedSuiteCard.path), item.path) &&
+                filteredCasePaths.has(item.path) &&
+                item.scoped !== false &&
+                item.suiteScoped !== false
             )
             .map(async (item) => ({
               ...parseYaml<TestCase>(await readFile(item.path, "utf8")),
@@ -203,6 +206,15 @@ async function postSnapshot(
             }))
         )
       : [];
+
+  const suiteBurndown =
+    selectedSuite !== null
+      ? calculateBurndown(
+          suiteCases,
+          selectedSuite.duration.scheduled.start,
+          selectedSuite.duration.scheduled.end
+        )
+      : null;
 
   await panel.webview.postMessage({
     type: "snapshot",
@@ -213,6 +225,7 @@ async function postSnapshot(
       selectedSuite,
       selectedCase,
       suiteCases,
+      suiteBurndown,
       relatedOptions,
       relatedRefById
     }
@@ -740,9 +753,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
 
-      const suite = parseYaml<{ duration?: { scheduled?: { start?: string; end?: string } } }>(
-        await readFile(node.path, "utf8")
-      );
+      const suite = parseYaml<Suite>(await readFile(node.path, "utf8"));
       const start = suite.duration?.scheduled?.start;
       const end = suite.duration?.scheduled?.end;
       if (!start || !end) {
@@ -750,26 +761,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
 
-      const snapshot = await getWorkspaceSnapshot(root, {});
-      const cases = snapshot.cases
-        .filter((item) => item.suiteId === node.id)
-        .map(
-          (item) =>
-            ({
-              id: item.id,
-              title: item.title,
-              tags: item.tags,
-              description: item.description,
-              scoped: true,
-              status: item.status,
-              operations: [],
-              related: [],
-              remarks: [],
-              completedDay: "1970-01-01",
-              tests: [],
-              issues: []
-            } as unknown as TestCase)
-        );
+      const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
+      const searchFilters: SearchFilters = {};
+      if (filters.tags.length > 0) {
+        searchFilters.tags = filters.tags;
+      }
+      const snapshot = await getWorkspaceSnapshot(root, searchFilters);
+      const filteredCases = snapshot.cases.filter((item) => matchCaseWithFilters(item, filters));
+      const filteredCasePaths = new Set(filteredCases.map((item) => item.path));
+      const cases = await Promise.all(
+        snapshot.cases
+          .filter(
+            (item) =>
+              isPathInside(dirname(node.path), item.path) &&
+              filteredCasePaths.has(item.path) &&
+              item.scoped !== false &&
+              item.suiteScoped !== false
+          )
+          .map(async (item) => parseYaml<TestCase>(await readFile(item.path, "utf8")))
+      );
+
 
       const stats = calculateBurndown(cases, start, end);
       vscodeApi.window.showInformationMessage(

@@ -83,6 +83,12 @@ describe("filters helpers", () => {
     ).toBe(false);
     expect(
       matchCaseWithFilters(
+        { ...item, suiteScoped: false },
+        { scopedOnly: true, tags: [], owners: [], testcaseStatus: [], issueHas: [], issueStatus: [] }
+      )
+    ).toBe(false);
+    expect(
+      matchCaseWithFilters(
         { ...item, suiteOwners: ["ops"] },
         { scopedOnly: false, tags: [], owners: ["qa"], testcaseStatus: [], issueHas: [], issueStatus: [] }
       )
@@ -169,7 +175,13 @@ describe("webviews html", () => {
   it("contains manager sections", () => {
     const html = managerHtml();
     expect(html).toContain("Suite Burndown");
-    expect(html).toContain("All cases");
+    expect(html).toContain("Scoped cases");
+    expect(html).toContain("No scoped cases match the active search filters.");
+    expect(html).toContain("snapshot.suiteBurndown");
+    expect(html.indexOf("const doneByDay")).toBeLessThan(html.indexOf("doneByDay.set"));
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    expect(script).toBeDefined();
+    expect(() => new Function(script!)).not.toThrow();
     expect(html).toContain("Case Editor");
     expect(html).toContain("saveState");
     expect(html).toContain("chartTooltip");

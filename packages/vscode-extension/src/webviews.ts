@@ -695,7 +695,7 @@ export function managerHtml(): string {
       const detailEl = document.getElementById('detail');
       const contextEl = document.getElementById('context');
       const saveStateEl = document.getElementById('saveState');
-      let snapshot = { root: '', suites: [], cases: [], selectedSuite: null, selectedCase: null, suiteCases: [], relatedOptions: [], relatedRefById: {} };
+      let snapshot = { root: '', suites: [], cases: [], selectedSuite: null, selectedCase: null, suiteCases: [], suiteBurndown: null, relatedOptions: [], relatedRefById: {} };
       let suppressSnapshotUntil = 0;
       let pendingSnapshot = null;
       let pendingSnapshotTimer = null;
@@ -952,29 +952,28 @@ export function managerHtml(): string {
         const d = String(date.getDate()).padStart(2, '0');
         return y + '-' + m + '-' + d;
       }
-      function eachDay(start, end) {
-        const days = [];
-        const current = new Date(start.getTime());
-        while (current <= end) {
-          days.push(new Date(current.getTime()));
-          current.setDate(current.getDate() + 1);
-        }
-        return days;
-      }
-      function createSuiteBurndownChart(suite, cases) {
+      function createSuiteBurndownChart(suite, cases, burndown) {
         const scheduledStart = parseDateOnly(suite?.duration?.scheduled?.start || '');
         const scheduledEnd = parseDateOnly(suite?.duration?.scheduled?.end || '');
         const box = document.createElement('div');
         box.className = 'chartWrap';
-        if (!scheduledStart || !scheduledEnd || scheduledStart > scheduledEnd) {
+        if (!scheduledStart || !scheduledEnd || scheduledStart > scheduledEnd || !burndown || burndown.anomalies?.includes('invalid_date_range')) {
           box.innerHTML = '<div class="muted">Burndown: set valid duration.scheduled.start/end to render chart.</div>';
           return box;
         }
+        if (burndown.anomalies?.includes('no_target_cases')) {
+          box.innerHTML =
+            '<div><strong>Suite Burndown</strong></div>' +
+            '<div class="muted">No scoped cases match the active search filters.</div>';
+          return box;
+        }
 
-        const scopedCases = suite?.scoped ? (cases || []).filter((testCase) => testCase?.scoped === true) : [];
-        const dates = eachDay(scheduledStart, scheduledEnd);
-        const totalCases = scopedCases.length;
+        const scopedCases = cases || [];
+        const buckets = burndown.buckets || [];
+        const dates = buckets.map((bucket) => parseDateOnly(bucket.date)).filter(Boolean);
+        const totalCases = burndown.summary.total;
         const xStep = dates.length > 1 ? 760 / (dates.length - 1) : 0;
+
         const yMaxLeft = Math.max(totalCases, 1);
 
         const dayKeySet = new Set(dates.map((d) => formatDateKey(d)));
@@ -983,15 +982,17 @@ export function managerHtml(): string {
         const issueClosedByDay = new Map();
 
         for (const testCase of scopedCases) {
-          const completed = parseDateOnly(testCase.completedDay || '');
-          if (completed && dayKeySet.has(formatDateKey(completed)) && testCase.status === 'done') {
-            const key = formatDateKey(completed);
-            doneByDay.set(key, (doneByDay.get(key) || 0) + 1);
-          }
           for (const issue of testCase.issues || []) {
             const detected = parseDateOnly(issue.detectedDay || '');
             if (detected && dayKeySet.has(formatDateKey(detected))) {
               const key = formatDateKey(detected);
+
+        let previousActualCompleted = 0;
+        for (const bucket of buckets) {
+          const completedToday = Math.max(0, bucket.actualCompleted - previousActualCompleted);
+          doneByDay.set(bucket.date, completedToday);
+          previousActualCompleted = bucket.actualCompleted;
+        }
               issueDetectedByDay.set(key, (issueDetectedByDay.get(key) || 0) + 1);
             }
             const closed = parseDateOnly(issue.completedDay || '');
@@ -1057,10 +1058,10 @@ export function managerHtml(): string {
           const d = dates[i];
           const key = formatDateKey(d);
           const x = 30 + xStep * i;
-          const idealRemaining = Math.max(0, totalCases - (totalCases * i) / Math.max(dates.length - 1, 1));
+          const idealRemaining = buckets[i]?.plannedRemaining ?? 0;
           const doneToday = doneByDay.get(key) || 0;
           doneAcc += doneToday;
-          const actualRemaining = Math.max(0, totalCases - doneAcc);
+          const actualRemaining = buckets[i]?.actualRemaining ?? Math.max(0, totalCases - doneAcc);
           const detectedToday = issueDetectedByDay.get(key) || 0;
           const closedToday = issueClosedByDay.get(key) || 0;
           detectedAcc += detectedToday;
@@ -1092,9 +1093,9 @@ export function managerHtml(): string {
           }
         }
 
-        const finalRemaining = Math.max(0, totalCases - doneAcc);
-        const completedCases = Math.max(0, totalCases - finalRemaining);
-        const progressRate = totalCases > 0 ? ((completedCases * 100) / totalCases).toFixed(1) : "0.0";
+        const finalRemaining = burndown.kpis.remainingCases;
+        const completedCases = burndown.kpis.completedCases;
+        const progressRate = burndown.kpis.progressRate.toFixed(1);
 
         box.innerHTML =
           '<div><strong>Suite Burndown</strong></div>' +
@@ -1117,7 +1118,7 @@ export function managerHtml(): string {
             '<div class="chartTooltip hidden" data-role="chartTooltip" aria-live="polite"></div>' +
           '</div>' +
           '<div class="chartKpis">' +
-            '<div class="chartKpi"><div class="chartKpiLabel">All cases</div><div class="chartKpiValue">' + String(totalCases) + '</div></div>' +
+            '<div class="chartKpi"><div class="chartKpiLabel">Scoped cases</div><div class="chartKpiValue">' + String(totalCases) + '</div></div>' +
             '<div class="chartKpi"><div class="chartKpiLabel">Remaining cases</div><div class="chartKpiValue">' + String(finalRemaining) + '</div></div>' +
             '<div class="chartKpi"><div class="chartKpiLabel">Completed cases</div><div class="chartKpiValue">' + String(completedCases) + '</div></div>' +
             '<div class="chartKpi"><div class="chartKpiLabel">Progress rate</div><div class="chartKpiValue">' + progressRate + '%</div></div>' +
@@ -1128,7 +1129,7 @@ export function managerHtml(): string {
             '<span><i class="legendDot" style="background:var(--vscode-descriptionForeground)"></i>Detected Issues cumulative (bar)</span>' +
             '<span><i class="legendDot" style="background:var(--vscode-symbolIcon-variableForeground)"></i>Remaining Issues/day</span>' +
           '</div>' +
-          '<div class="chartNote">Scope rule: only Suite scoped=true and Case scoped=true are counted. Detected issues bars are cumulative by detectedDay. Remaining issues uses cumulative detected minus cumulative completedDay.</div>';
+          '<div class="chartNote">Scope rule: active search filters and scoped Suite/Case ancestry are applied once before aggregation. Detected issues bars are cumulative by detectedDay. Remaining issues uses cumulative detected minus cumulative completedDay.</div>';
 
         const tooltip = box.querySelector('[data-role="chartTooltip"]');
         const canvas = box.querySelector('.chartCanvas');
@@ -1519,7 +1520,7 @@ export function managerHtml(): string {
         }
         if (snapshot.selectedSuite) {
           contextEl.textContent = 'Suite: ' + (snapshot.selectedSuite.id || '');
-          detailEl.appendChild(createSuiteBurndownChart(snapshot.selectedSuite, snapshot.suiteCases || []));
+          detailEl.appendChild(createSuiteBurndownChart(snapshot.selectedSuite, snapshot.suiteCases || [], snapshot.suiteBurndown));
           const title = document.createElement('h4');
           title.textContent = 'Suite Editor';
           detailEl.appendChild(title);

@@ -58,6 +58,8 @@ export interface CaseCard {
   tags: string[];
   suiteId?: string;
   suiteOwners: string[];
+  suiteTags: string[];
+  suiteScoped: boolean;
   issueCount: number;
   issueStatuses: string[];
   issueOwners: string[];
@@ -463,6 +465,8 @@ export async function getWorkspaceSnapshot(rootDir: string, filters: SearchFilte
         tags: testCase.tags,
         suiteId: nodes.find((candidate) => candidate.type === "suite" && candidate.path === node.parentPath)?.id,
         suiteOwners: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.owners : [],
+        suiteTags: [],
+        suiteScoped: true,
         issueCount: testCase.issues.length,
         issueStatuses: Array.from(new Set(testCase.issues.map((issue) => issue.status))),
         issueOwners: Array.from(new Set(testCase.issues.flatMap((issue) => issue.owners ?? []))),
@@ -470,6 +474,28 @@ export async function getWorkspaceSnapshot(rootDir: string, filters: SearchFilte
         scheduledEnd: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.duration.scheduled.end : undefined
       });
     }
+  }
+
+  const suiteNodesByPath = new Map(
+    nodes.filter((node) => node.type === "suite").map((node) => [node.path, node] as const)
+  );
+  const caseNodesByPath = new Map(
+    nodes.filter((node) => node.type === "case").map((node) => [node.path, node] as const)
+  );
+  for (const testCase of cases) {
+    const inheritedTags: string[] = [];
+    let suiteScoped = true;
+    let suitePath = caseNodesByPath.get(testCase.path)?.parentPath;
+    while (suitePath) {
+      const suite = suiteMap.get(suitePath);
+      if (suite) {
+        inheritedTags.push(...suite.tags);
+        suiteScoped = suiteScoped && suite.scoped !== false;
+      }
+      suitePath = suiteNodesByPath.get(suitePath)?.parentPath;
+    }
+    testCase.suiteTags = Array.from(new Set(inheritedTags));
+    testCase.suiteScoped = suiteScoped;
   }
 
   const caseEntities = casesToTestCase(cases);
@@ -487,7 +513,7 @@ function casesToTestCase(cases: CaseCard[]): Array<TestCase & { path: string }> 
     id: item.id,
     title: item.title,
     owners: item.owners,
-    tags: item.tags,
+    tags: Array.from(new Set([...item.tags, ...item.suiteTags])),
     description: item.description,
     scoped: item.scoped,
     status: item.status,
