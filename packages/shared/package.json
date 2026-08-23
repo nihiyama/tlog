@@ -1,6 +1,6 @@
 {
   "name": "@tlog/shared",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Shared TypeScript utilities for tlog",
   "type": "module",
   "main": "dist/index.js",
