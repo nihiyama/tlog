@@ -13,6 +13,19 @@ TLog adds a dedicated Activity Bar view for browsing suites/cases, filtering exe
 - Navigate quickly between suites, cases, and related entities.
 - Edit large case/suite payloads with form-style UI instead of manual YAML edits.
 
+## Language Support
+
+TLog follows the VS Code display language and currently supports:
+
+- English (`en`), which is also the fallback language
+- Japanese (`ja`)
+
+To switch languages, run the VS Code `Configure Display Language` command, select the language, and restart VS Code or reload the window. Unsupported locales and missing translations fall back to English. TLog command IDs, setting keys, YAML fields, and enum values do not change with the display language.
+
+Translation architecture, terminology, the user-facing text inventory, and contributor instructions are documented in [`docs/localization.md`](./docs/localization.md).
+
+Localized Webviews avoid DOM translation work when the active language uses the original English strings, and deduplicate translated mutation processing to keep initial rendering responsive.
+
 ## Requirements
 
 - VS Code `^1.90.0`
@@ -26,7 +39,7 @@ TLog adds a dedicated Activity Bar view for browsing suites/cases, filtering exe
    - `Set Root` with a typed path, or
    - `Browse` to pick a folder.
 4. Use the `Suites` tree to open a suite/case in `TLog Manager`.
-5. Edit fields in the manager. Changes are auto-saved to YAML.
+5. Edit fields in the manager. Unsaved changes stay in the VS Code document until you save with the Manager Save button, `Ctrl+S` / `Cmd+S`, or configured Auto Save.
 
 ![Set Root and Search Filters](./docs/images/controls-root-and-search.png)
 
@@ -40,6 +53,7 @@ The extension contributes a custom Activity Bar container named `TLog` with two 
   - Root directory selection
   - Search/filter UI
   - Active filter chips with one-click removal
+  - Compact action buttons for setting or browsing the root and applying or clearing filters
 - `Suites` (tree view)
   - Hierarchical suite/case browsing from filesystem
   - Status-based icons
@@ -49,7 +63,7 @@ Tree behavior highlights:
 
 - Suite nodes are discovered from `index.yaml` and `*.suite.yaml`.
 - Case nodes are discovered from sibling `*.yaml` files.
-- Suite icon changes when all direct cases are `done`.
+- Case and suite icons are color-coded by execution status, with suite colors derived from aggregated case status.
 - Clicking a suite/case opens `TLog Manager` for that entity.
 
 ### 2) Powerful Filtering
@@ -68,10 +82,11 @@ Filter UX details:
 - Advanced filters use multi-select dropdown panels.
 - Active filters are shown as chips and removable individually.
 - `Clear all filters` resets everything to defaults.
+- Case tag matching includes tags inherited from ancestor suites without copying those tags into editable case data.
 
-### 3) TLog Manager (Webview Panel)
+### 3) TLog Manager (Custom Text Editor)
 
-`TLog Manager` is a persistent editor panel (`retainContextWhenHidden: true`) with two editing modes.
+`TLog Manager` is a VS Code custom text editor with one tab per YAML file. Opening another suite or case creates or reveals its own Manager tab, so unsaved work in the current tab is preserved.
 
 #### Suite editor
 
@@ -87,8 +102,15 @@ Editable fields include:
 Additional suite tools:
 
 - YAML open button
-- Suite burndown visualization
+- Suite burndown visualization synchronized with the active Controls filters and inherited suite/case scope
 - Embedded list of cases in the suite with status filter + text search
+
+Burndown and statistics behavior:
+
+- Scoped totals, status counts, completed and remaining counts, progress rate, and daily remaining series use the same shared calculation rules.
+- Cases below an ancestor suite with `scoped: false` are excluded, and an explicit no-target state is shown when no scoped cases match.
+- Cases with `status: done` are included in KPI completion counts even when `completedDay` is missing or outside the scheduled period; out-of-range completion dates are folded into the chart boundary buckets.
+- `TLog: Show Suite Statistics` uses the same recursive scope, active filters, and completion dates as the Manager burndown.
 
 #### Case editor
 
@@ -108,9 +130,12 @@ Editable fields include:
 
 Editor behavior:
 
-- Save is auto-triggered on field changes (debounced).
-- Save status is shown in panel header (`saving`, `saved`, `error`).
-- Related references are normalized against known IDs.
+- Field changes update an in-memory VS Code `TextDocument` and show the standard dirty indicator without writing YAML immediately.
+- Save from the button next to `Open YAML`, with `Ctrl+S` / `Cmd+S`, or through configured VS Code Auto Save.
+- Closing a dirty tab uses VS Code's standard Save / Don't Save / Cancel flow.
+- Standard VS Code undo / redo, discard, backup, and hot exit behavior applies.
+- Save status is shown in the panel header (`saving`, `saved`, `error`).
+- Related references are normalized against known IDs when the document draft is updated.
 
 ![TLog Manager Suite Editor](./docs/images/manager-suite-editor.png)
 

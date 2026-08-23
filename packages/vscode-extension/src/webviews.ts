@@ -1,4 +1,6 @@
-export function controlsHtml(): string {
+import { identityTranslate, webviewLocalizationScript, type Translate } from "./localization.js";
+
+export function controlsHtml(t: Translate = identityTranslate, language = "en"): string {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -95,6 +97,11 @@ export function controlsHtml(): string {
         background: color-mix(in srgb, var(--surface) 72%, transparent);
         color: var(--vscode-foreground);
         border-color: var(--vscode-input-border);
+      }
+      button.compactAction {
+        padding: 3px 8px;
+        font-size: 11px;
+        line-height: 1.2;
       }
       details {
         margin-top: 10px;
@@ -196,8 +203,8 @@ export function controlsHtml(): string {
       <label class="label" for="rootPath">Root directory</label>
       <input id="rootPath" aria-label="tlog root directory" placeholder="tlog root directory" />
       <div class="row">
-        <button id="setRoot">Set Root</button>
-        <button id="browseRoot" class="secondary">Browse</button>
+        <button id="setRoot" class="compactAction">Set Root</button>
+        <button id="browseRoot" class="secondary compactAction">Browse</button>
       </div>
       <div id="status" aria-live="polite"></div>
     </div>
@@ -288,8 +295,8 @@ export function controlsHtml(): string {
       </div>
 
       <div class="row" style="margin-top:8px;">
-        <button id="applySearch">Apply</button>
-        <button id="clearSearch" class="secondary">Clear all filters</button>
+        <button id="applySearch" class="compactAction">Apply</button>
+        <button id="clearSearch" class="secondary compactAction">Clear all filters</button>
       </div>
     </div>
 
@@ -479,11 +486,12 @@ export function controlsHtml(): string {
 
       vscode.postMessage({ type: "ready" });
     </script>
+    ${webviewLocalizationScript(t, language)}
   </body>
 </html>`;
 }
 
-export function managerHtml(): string {
+export function managerHtml(t: Translate = identityTranslate, language = "en"): string {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -573,6 +581,7 @@ export function managerHtml(): string {
       }
       .muted { color: var(--vscode-descriptionForeground); font-size: 12px; }
       .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .headActions { display: inline-flex; align-items: center; gap: 6px; }
       .iconBtn {
         width: 30px;
         height: 30px;
@@ -695,11 +704,7 @@ export function managerHtml(): string {
       const detailEl = document.getElementById('detail');
       const contextEl = document.getElementById('context');
       const saveStateEl = document.getElementById('saveState');
-      let snapshot = { root: '', suites: [], cases: [], selectedSuite: null, selectedCase: null, suiteCases: [], relatedOptions: [], relatedRefById: {} };
-      let suppressSnapshotUntil = 0;
-      let pendingSnapshot = null;
-      let pendingSnapshotTimer = null;
-      let saveStateTimer = null;
+      let snapshot = { root: '', suites: [], cases: [], selectedSuite: null, selectedCase: null, suiteCases: [], suiteBurndown: null, relatedOptions: [], relatedRefById: {}, dirty: false };
       function esc(v){ return (v || '').replace(/"/g, '&quot;'); }
       function escAttr(v){ return String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
       function setSaveState(kind, text) {
@@ -709,27 +714,12 @@ export function managerHtml(): string {
       function fileIcon() {
         return '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 1.5h6.8L13 4.7V14.5H3z" stroke="currentColor" stroke-width="1.2"/><path d="M9.8 1.5v3.2H13" stroke="currentColor" stroke-width="1.2"/></svg>';
       }
-      function schedulePendingSnapshotApply() {
-        if (pendingSnapshotTimer) {
-          clearTimeout(pendingSnapshotTimer);
-        }
-        const wait = Math.max(0, suppressSnapshotUntil - Date.now()) + 60;
-        pendingSnapshotTimer = setTimeout(() => {
-          if (!pendingSnapshot) {
-            return;
-          }
-          snapshot = pendingSnapshot;
-          pendingSnapshot = null;
-          render();
-        }, wait);
+      function saveIcon() {
+        return '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 2.5h9l2 2v9h-11z" stroke="currentColor" stroke-width="1.2"/><path d="M5 2.5v4h5v-4M5 13v-4h6v4" stroke="currentColor" stroke-width="1.2"/></svg>';
       }
-      function bindAutoPersist(card, buildMessage, buildInitialMessage) {
+      function bindDocumentDraft(card, buildMessage, buildInitialMessage) {
         const initialMessage = buildInitialMessage ? buildInitialMessage() : buildMessage();
         let lastSent = JSON.stringify(initialMessage);
-        let debounceTimer = null;
-        const markEditing = () => {
-          suppressSnapshotUntil = Date.now() + 1200;
-        };
         const flush = () => {
           if (!document.body.contains(card)) {
             return;
@@ -740,40 +730,24 @@ export function managerHtml(): string {
             return;
           }
           lastSent = serialized;
-          setSaveState('saving', 'Saving...');
+          setSaveState('saving', 'Unsaved');
           vscode.postMessage(next);
-          if (saveStateTimer) {
-            clearTimeout(saveStateTimer);
-          }
-          saveStateTimer = setTimeout(() => setSaveState('saved', 'Saved'), 180);
         };
-        const schedule = () => {
-          if (debounceTimer) {
-            clearTimeout(debounceTimer);
-          }
-          debounceTimer = setTimeout(flush, 700);
-        };
-
-        card.addEventListener('input', () => {
-          markEditing();
-          schedule();
-        });
-        card.addEventListener('change', () => {
-          markEditing();
-          schedule();
-        });
+        card.addEventListener('input', flush);
+        card.addEventListener('change', flush);
         card.addEventListener('click', (event) => {
-          const target = event.target;
-          if (target && target.closest && target.closest('button')) {
-            markEditing();
-            schedule();
+          const button = event.target && event.target.closest ? event.target.closest('button') : null;
+          if (!button || button.matches('[data-role="save"], [data-role="openRaw"]')) {
+            return;
           }
+          flush();
         });
       }
       function createChipEditor(root, initialValues, options = {}) {
         let values = [...(initialValues || [])];
         const chips = root.querySelector('[data-role="chips"]');
         const input = root.querySelector('[data-role="chipInput"]');
+        const notifyChanged = () => root.dispatchEvent(new Event('change', { bubbles: true }));
         const onChipClick = options.onChipClick || null;
         const removable = options.removable !== false;
         const readOnly = options.readOnly === true;
@@ -792,6 +766,7 @@ export function managerHtml(): string {
               el.querySelector('[data-role="remove"]').addEventListener('click', () => {
                 values = values.filter((v) => v !== value);
                 render();
+                notifyChanged();
               });
             }
             chips.appendChild(el);
@@ -808,9 +783,14 @@ export function managerHtml(): string {
           const raw = input.value.trim();
           if (!raw) return;
           const next = raw.split(',').map((v) => v.trim()).filter((v) => v.length > 0);
-          values = Array.from(new Set(values.concat(next)));
+          const updatedValues = Array.from(new Set(values.concat(next)));
+          const changed = updatedValues.length !== values.length;
+          values = updatedValues;
           input.value = '';
           render();
+          if (changed) {
+            notifyChanged();
+          }
           if (keepFocus) {
             input.focus();
           }
@@ -850,7 +830,7 @@ export function managerHtml(): string {
         return {
           values: () =>
             Array.from(list.querySelectorAll('[data-role="value"]'))
-              .map((el) => el.value.trim())
+              .map((el) => el.value)
               .filter((v) => v.length > 0)
         };
       }
@@ -894,7 +874,7 @@ export function managerHtml(): string {
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML =
-          '<div class="head"><div><strong>' + suite.id + '</strong> <span class="muted">' + suite.path + '</span></div><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div>' +
+          '<div class="head"><div><strong>' + suite.id + '</strong> <span class="muted">' + suite.path + '</span></div><div class="headActions"><button class="iconBtn" data-role="save" title="Save" aria-label="Save">' + saveIcon() + '</button><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div></div>' +
           '<div class="muted" style="margin-top:6px;">Root / ' + esc(suite.id) + '</div>' +
           '<div class="overviewRows">' +
             '<div class="overviewRow">' +
@@ -921,9 +901,13 @@ export function managerHtml(): string {
           suite.id
         );
         const remarksEditor = createTextListEditor(card.querySelector('[data-role="suiteRemarksEditor"]'), suite.remarks || [], 'Add Remark', { multiline: true });
+        card.querySelector('[data-role="save"]').addEventListener('click', () => {
+          setSaveState('saving', 'Saving...');
+          vscode.postMessage({ type: 'save' });
+        });
         card.querySelector('[data-role="openRaw"]').addEventListener('click', () => vscode.postMessage({ type: 'openRaw', path: suite.path }));
-        bindAutoPersist(card, () => ({
-            type: 'saveSuite',
+        bindDocumentDraft(card, () => ({
+            type: 'editSuite',
             path: suite.path,
             id: suite.id,
             title: card.querySelector('[data-role="title"]').value,
@@ -952,29 +936,28 @@ export function managerHtml(): string {
         const d = String(date.getDate()).padStart(2, '0');
         return y + '-' + m + '-' + d;
       }
-      function eachDay(start, end) {
-        const days = [];
-        const current = new Date(start.getTime());
-        while (current <= end) {
-          days.push(new Date(current.getTime()));
-          current.setDate(current.getDate() + 1);
-        }
-        return days;
-      }
-      function createSuiteBurndownChart(suite, cases) {
+      function createSuiteBurndownChart(suite, cases, burndown) {
         const scheduledStart = parseDateOnly(suite?.duration?.scheduled?.start || '');
         const scheduledEnd = parseDateOnly(suite?.duration?.scheduled?.end || '');
         const box = document.createElement('div');
         box.className = 'chartWrap';
-        if (!scheduledStart || !scheduledEnd || scheduledStart > scheduledEnd) {
+        if (!scheduledStart || !scheduledEnd || scheduledStart > scheduledEnd || !burndown || burndown.anomalies?.includes('invalid_date_range')) {
           box.innerHTML = '<div class="muted">Burndown: set valid duration.scheduled.start/end to render chart.</div>';
           return box;
         }
+        if (burndown.anomalies?.includes('no_target_cases')) {
+          box.innerHTML =
+            '<div><strong>Suite Burndown</strong></div>' +
+            '<div class="muted">No scoped cases match the active search filters.</div>';
+          return box;
+        }
 
-        const scopedCases = suite?.scoped ? (cases || []).filter((testCase) => testCase?.scoped === true) : [];
-        const dates = eachDay(scheduledStart, scheduledEnd);
-        const totalCases = scopedCases.length;
+        const scopedCases = cases || [];
+        const buckets = burndown.buckets || [];
+        const dates = buckets.map((bucket) => parseDateOnly(bucket.date)).filter(Boolean);
+        const totalCases = burndown.summary.total;
         const xStep = dates.length > 1 ? 760 / (dates.length - 1) : 0;
+
         const yMaxLeft = Math.max(totalCases, 1);
 
         const dayKeySet = new Set(dates.map((d) => formatDateKey(d)));
@@ -983,15 +966,17 @@ export function managerHtml(): string {
         const issueClosedByDay = new Map();
 
         for (const testCase of scopedCases) {
-          const completed = parseDateOnly(testCase.completedDay || '');
-          if (completed && dayKeySet.has(formatDateKey(completed)) && testCase.status === 'done') {
-            const key = formatDateKey(completed);
-            doneByDay.set(key, (doneByDay.get(key) || 0) + 1);
-          }
           for (const issue of testCase.issues || []) {
             const detected = parseDateOnly(issue.detectedDay || '');
             if (detected && dayKeySet.has(formatDateKey(detected))) {
               const key = formatDateKey(detected);
+
+        let previousActualCompleted = 0;
+        for (const bucket of buckets) {
+          const completedToday = Math.max(0, bucket.actualCompleted - previousActualCompleted);
+          doneByDay.set(bucket.date, completedToday);
+          previousActualCompleted = bucket.actualCompleted;
+        }
               issueDetectedByDay.set(key, (issueDetectedByDay.get(key) || 0) + 1);
             }
             const closed = parseDateOnly(issue.completedDay || '');
@@ -1057,10 +1042,10 @@ export function managerHtml(): string {
           const d = dates[i];
           const key = formatDateKey(d);
           const x = 30 + xStep * i;
-          const idealRemaining = Math.max(0, totalCases - (totalCases * i) / Math.max(dates.length - 1, 1));
+          const idealRemaining = buckets[i]?.plannedRemaining ?? 0;
           const doneToday = doneByDay.get(key) || 0;
           doneAcc += doneToday;
-          const actualRemaining = Math.max(0, totalCases - doneAcc);
+          const actualRemaining = buckets[i]?.actualRemaining ?? Math.max(0, totalCases - doneAcc);
           const detectedToday = issueDetectedByDay.get(key) || 0;
           const closedToday = issueClosedByDay.get(key) || 0;
           detectedAcc += detectedToday;
@@ -1092,9 +1077,9 @@ export function managerHtml(): string {
           }
         }
 
-        const finalRemaining = Math.max(0, totalCases - doneAcc);
-        const completedCases = Math.max(0, totalCases - finalRemaining);
-        const progressRate = totalCases > 0 ? ((completedCases * 100) / totalCases).toFixed(1) : "0.0";
+        const finalRemaining = burndown.kpis.remainingCases;
+        const completedCases = burndown.kpis.completedCases;
+        const progressRate = burndown.kpis.progressRate.toFixed(1);
 
         box.innerHTML =
           '<div><strong>Suite Burndown</strong></div>' +
@@ -1117,7 +1102,7 @@ export function managerHtml(): string {
             '<div class="chartTooltip hidden" data-role="chartTooltip" aria-live="polite"></div>' +
           '</div>' +
           '<div class="chartKpis">' +
-            '<div class="chartKpi"><div class="chartKpiLabel">All cases</div><div class="chartKpiValue">' + String(totalCases) + '</div></div>' +
+            '<div class="chartKpi"><div class="chartKpiLabel">Scoped cases</div><div class="chartKpiValue">' + String(totalCases) + '</div></div>' +
             '<div class="chartKpi"><div class="chartKpiLabel">Remaining cases</div><div class="chartKpiValue">' + String(finalRemaining) + '</div></div>' +
             '<div class="chartKpi"><div class="chartKpiLabel">Completed cases</div><div class="chartKpiValue">' + String(completedCases) + '</div></div>' +
             '<div class="chartKpi"><div class="chartKpiLabel">Progress rate</div><div class="chartKpiValue">' + progressRate + '%</div></div>' +
@@ -1128,7 +1113,7 @@ export function managerHtml(): string {
             '<span><i class="legendDot" style="background:var(--vscode-descriptionForeground)"></i>Detected Issues cumulative (bar)</span>' +
             '<span><i class="legendDot" style="background:var(--vscode-symbolIcon-variableForeground)"></i>Remaining Issues/day</span>' +
           '</div>' +
-          '<div class="chartNote">Scope rule: only Suite scoped=true and Case scoped=true are counted. Detected issues bars are cumulative by detectedDay. Remaining issues uses cumulative detected minus cumulative completedDay.</div>';
+          '<div class="chartNote">Scope rule: active search filters and scoped Suite/Case ancestry are applied once before aggregation. Detected issues bars are cumulative by detectedDay. Remaining issues uses cumulative detected minus cumulative completedDay.</div>';
 
         const tooltip = box.querySelector('[data-role="chartTooltip"]');
         const canvas = box.querySelector('.chartCanvas');
@@ -1304,7 +1289,7 @@ export function managerHtml(): string {
         for (const v of values || []) add(v);
         return {
           add,
-          values: () => Array.from(listEl.querySelectorAll('[data-role="value"]')).map((el) => el.value.trim()).filter((v) => v.length > 0)
+          values: () => Array.from(listEl.querySelectorAll('[data-role="value"]')).map((el) => el.value).filter((v) => v.length > 0)
         };
       }
       function createTestsEditor(root, tests) {
@@ -1341,7 +1326,7 @@ export function managerHtml(): string {
         return {
           add,
           values: () => Array.from(list.querySelectorAll('[data-role="test-item"]')).map((row) => ({
-            name: row.querySelector('[data-key="name"]').value.trim(),
+            name: row.querySelector('[data-key="name"]').value,
             expected: row.querySelector('[data-key="expected"]').value,
             actual: row.querySelector('[data-key="actual"]').value,
             trails: row.trailsEditor.values(),
@@ -1393,7 +1378,7 @@ export function managerHtml(): string {
         return {
           add,
           values: () => Array.from(list.querySelectorAll('[data-role="issue-item"]')).map((row) => ({
-            incident: row.querySelector('[data-key="incident"]').value.trim(),
+            incident: row.querySelector('[data-key="incident"]').value,
             owners: row.ownersEditor.getValues(),
             causes: row.causesEditor.values(),
             solutions: row.solutionsEditor.values(),
@@ -1413,7 +1398,7 @@ export function managerHtml(): string {
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML =
-          '<div class="head"><div><strong>' + testCase.id + '</strong> <span class="muted">' + testCase.path + '</span></div><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div>' +
+          '<div class="head"><div><strong>' + testCase.id + '</strong> <span class="muted">' + testCase.path + '</span></div><div class="headActions"><button class="iconBtn" data-role="save" title="Save" aria-label="Save">' + saveIcon() + '</button><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div></div>' +
           '<div class="muted" style="margin-top:6px;">Root / ' + esc(testCase.suiteId || '-') + ' / ' + esc(testCase.id) + '</div>' +
           '<div class="overviewRows">' +
             '<div class="overviewRow">' +
@@ -1473,11 +1458,15 @@ export function managerHtml(): string {
             completedDayEl.value = todayDate();
           }
         });
+        card.querySelector('[data-role="save"]').addEventListener('click', () => {
+          setSaveState('saving', 'Saving...');
+          vscode.postMessage({ type: 'save' });
+        });
         card.querySelector('[data-role="openRaw"]').addEventListener('click', () => vscode.postMessage({ type: 'openRaw', path: testCase.path }));
-        bindAutoPersist(card, () => {
+        bindDocumentDraft(card, () => {
             const derived = deriveCaseDraftFields();
             return {
-            type: 'saveCase',
+            type: 'editCase',
             path: testCase.path,
             id: testCase.id,
             title: card.querySelector('[data-role="title"]').value,
@@ -1494,7 +1483,7 @@ export function managerHtml(): string {
             issues: issuesEditor.values()
             };
           }, () => ({
-            type: 'saveCase',
+            type: 'editCase',
             path: testCase.path,
             id: testCase.id,
             title: card.querySelector('[data-role="title"]').value,
@@ -1519,7 +1508,7 @@ export function managerHtml(): string {
         }
         if (snapshot.selectedSuite) {
           contextEl.textContent = 'Suite: ' + (snapshot.selectedSuite.id || '');
-          detailEl.appendChild(createSuiteBurndownChart(snapshot.selectedSuite, snapshot.suiteCases || []));
+          detailEl.appendChild(createSuiteBurndownChart(snapshot.selectedSuite, snapshot.suiteCases || [], snapshot.suiteBurndown));
           const title = document.createElement('h4');
           title.textContent = 'Suite Editor';
           detailEl.appendChild(title);
@@ -1581,21 +1570,18 @@ export function managerHtml(): string {
       window.addEventListener('message', (event) => {
         const msg = event.data;
         if (msg.type === 'snapshot') {
-          const currentPath = snapshot.selectedCase?.path || snapshot.selectedSuite?.path || '';
-          const nextPath = msg.payload.selectedCase?.path || msg.payload.selectedSuite?.path || '';
-          const selectionChanged = currentPath !== nextPath;
-          if (!selectionChanged && Date.now() < suppressSnapshotUntil) {
-            pendingSnapshot = msg.payload;
-            schedulePendingSnapshotApply();
-            return;
-          }
-          pendingSnapshot = null;
-          if (pendingSnapshotTimer) {
-            clearTimeout(pendingSnapshotTimer);
-            pendingSnapshotTimer = null;
-          }
           snapshot = msg.payload;
           render();
+          setSaveState(snapshot.dirty ? 'saving' : '', snapshot.dirty ? 'Unsaved' : '');
+        }
+        if (msg.type === 'saving') {
+          setSaveState('saving', 'Saving...');
+        }
+        if (msg.type === 'dirty') {
+          setSaveState('saving', 'Unsaved');
+        }
+        if (msg.type === 'saved') {
+          setSaveState('saved', 'Saved');
         }
         if (msg.type === 'error') {
           setSaveState('error', 'Save failed');
@@ -1605,8 +1591,30 @@ export function managerHtml(): string {
           detailEl.prepend(errorEl);
         }
       });
+      window.addEventListener('keydown', (event) => {
+        if (!(event.ctrlKey || event.metaKey) || event.altKey) {
+          return;
+        }
+        const key = event.key.toLowerCase();
+        if (key === 's') {
+          event.preventDefault();
+          vscode.postMessage({ type: 'save' });
+          return;
+        }
+        if (key === 'z') {
+          event.preventDefault();
+          vscode.postMessage({ type: event.shiftKey ? 'redo' : 'undo' });
+          return;
+        }
+        if (key === 'y') {
+          event.preventDefault();
+          vscode.postMessage({ type: 'redo' });
+        }
+      });
+
       vscode.postMessage({ type: 'ready' });
     </script>
+    ${webviewLocalizationScript(t, language)}
   </body>
 </html>`;
 }

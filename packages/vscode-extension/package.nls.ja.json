@@ -1,0 +1,21 @@
+{
+  "views.controls": "コントロール",
+  "views.suites": "スイート",
+  "commands.selectRoot": "TLog: ルートを設定",
+  "commands.searchTags": "TLog: タグを検索",
+  "commands.searchOwners": "TLog: 担当者を検索",
+  "commands.clearSearch": "TLog: 検索をクリア",
+  "commands.openManager": "TLog: マネージャーを開く",
+  "commands.refreshTree": "TLog: ツリーを更新",
+  "commands.createSuite": "スイートを作成",
+  "commands.createCase": "ケースを作成",
+  "commands.filterCases": "TLog: ケースを絞り込み",
+  "commands.showSuiteStats": "TLog: スイート統計を表示",
+  "commands.openRelated": "TLog: 関連項目を開く",
+  "commands.openRawYaml": "YAML を開く",
+  "commands.deleteNode": "削除",
+  "commands.expandAllSuites": "すべて展開",
+  "commands.collapseAllSuites": "すべて折りたたむ",
+  "customEditors.manager": "TLog マネージャー",
+  "configuration.scopeMode.description": "スイート操作に子孫スイートを含めるかどうかを制御します。"
+}

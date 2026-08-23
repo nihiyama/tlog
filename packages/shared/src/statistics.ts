@@ -1,4 +1,4 @@
-import type { TestCase } from "./domain.js";
+import { isTlogDateString, type TestCase } from "./domain.js";
 
 export interface StatusSummary {
   todo: number;
@@ -11,11 +11,20 @@ export interface BurndownBucket {
   date: string;
   plannedCompleted: number;
   actualCompleted: number;
+  plannedRemaining: number;
+  actualRemaining: number;
+}
+
+export interface BurndownKpis {
+  completedCases: number;
+  remainingCases: number;
+  progressRate: number;
 }
 
 export interface BurndownResult {
   summary: StatusSummary;
   buckets: BurndownBucket[];
+  kpis: BurndownKpis;
   anomalies: string[];
 }
 
@@ -51,42 +60,57 @@ export function summarizeStatus(cases: TestCase[]): StatusSummary {
     total: cases.length
   };
 }
+/**
+ * Counts only scoped cases. Done cases completed before the period are counted
+ * from the first bucket; done cases completed after the period or without a
+ * completion date are counted in the final bucket so that the endpoint matches
+ * the KPI values.
+ */
 
 export function calculateBurndown(cases: TestCase[], start: string, end: string): BurndownResult {
   const anomalies: string[] = [];
-  const summary = summarizeStatus(cases);
+  const scopedCases = cases.filter((testCase) => testCase.scoped !== false);
+  const summary = summarizeStatus(scopedCases);
+  const kpis: BurndownKpis = {
+    completedCases: summary.done,
+    remainingCases: Math.max(0, summary.total - summary.done),
+    progressRate: summary.total > 0 ? (summary.done * 100) / summary.total : 0
+  };
 
   if (summary.total === 0) {
     anomalies.push("no_target_cases");
   }
 
-  if (start > end) {
+  if (!isTlogDateString(start) || !isTlogDateString(end) || start > end) {
     anomalies.push("invalid_date_range");
-    return { summary, buckets: [], anomalies };
+    return { summary, buckets: [], kpis, anomalies };
   }
 
   const startDate = new Date(`${start}T00:00:00.000Z`);
   const endDate = new Date(`${end}T00:00:00.000Z`);
   const days = Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-
-  const doneCases = cases.filter((testCase) => testCase.status === "done");
+  const doneCases = scopedCases.filter((testCase) => testCase.status === "done");
   const buckets: BurndownBucket[] = [];
 
   for (let offset = 0; offset < days; offset += 1) {
     const day = addDays(startDate, offset);
     const dayText = formatDate(day);
-
     const plannedCompleted = Math.min(summary.total, Math.ceil(((offset + 1) / days) * summary.total));
-    const actualCompleted = doneCases.filter(
-      (testCase) => testCase.completedDay !== null && testCase.completedDay <= dayText
-    ).length;
+    const actualCompleted = doneCases.filter((testCase) => {
+      if (testCase.completedDay === null || testCase.completedDay > end) {
+        return dayText === end;
+      }
+      return testCase.completedDay <= dayText;
+    }).length;
 
     buckets.push({
       date: dayText,
       plannedCompleted,
-      actualCompleted
+      actualCompleted,
+      plannedRemaining: Math.max(0, summary.total - plannedCompleted),
+      actualRemaining: Math.max(0, summary.total - actualCompleted)
     });
   }
 
-  return { summary, buckets, anomalies };
+  return { summary, buckets, kpis, anomalies };
 }

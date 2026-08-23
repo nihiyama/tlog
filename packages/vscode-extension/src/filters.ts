@@ -39,6 +39,7 @@ export function matchCaseWithFilters(
   item: {
     scoped: boolean;
     status: TestCase["status"];
+    suiteScoped?: boolean;
     suiteOwners: string[];
     owners?: string[];
     issueOwners?: string[];
@@ -47,7 +48,7 @@ export function matchCaseWithFilters(
   },
   filters: TreeFilters
 ): boolean {
-  if (filters.scopedOnly && !item.scoped) {
+  if (filters.scopedOnly && (!item.scoped || item.suiteScoped === false)) {
     return false;
   }
   if (filters.owners.length > 0) {

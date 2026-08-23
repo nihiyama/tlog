@@ -1,11 +1,14 @@
 import type { SearchFilters } from "@tlog/shared";
 import type * as vscode from "vscode";
 import type { TreeNodeModel } from "./tlog-workspace.js";
+import { identityTranslate, type Translate } from "./localization.js";
 import { getWorkspaceSnapshot, loadTree } from "./tlog-workspace.js";
 import { matchCaseWithFilters, normalizeTreeFilters, type TreeFilters } from "./filters.js";
 
 function pruneEmptySuites(nodes: TreeNodeModel[]): TreeNodeModel[] {
-  const suiteByPath = new Map(nodes.filter((node) => node.type === "suite").map((node) => [node.path, node] as const));
+  const suiteByPath = new Map(
+    nodes.filter((node) => node.type === "suite").map((node) => [node.path, node] as const)
+  );
   const keepSuitePaths = new Set<string>();
 
   for (const node of nodes) {
@@ -36,7 +39,8 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
     private readonly vscodeApi: typeof vscode,
     private readonly context: vscode.ExtensionContext,
     private readonly rootKey: string,
-    private readonly filterKey: string
+    private readonly filterKey: string,
+    private readonly t: Translate = identityTranslate
   ) {
     this.emitter = new this.vscodeApi.EventEmitter<TreeNodeModel | undefined | void>();
     this.rootDirectory = context.workspaceState.get<string>(rootKey);
@@ -44,12 +48,17 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
       light: this.vscodeApi.Uri.joinPath(context.extensionUri, "media", name),
       dark: this.vscodeApi.Uri.joinPath(context.extensionUri, "media", name)
     });
+    const themedIcon = (lightName: string, darkName: string) => ({
+      light: this.vscodeApi.Uri.joinPath(context.extensionUri, "media", lightName),
+      dark: this.vscodeApi.Uri.joinPath(context.extensionUri, "media", darkName)
+    });
     this.iconPaths = {
       caseTodo: icon("status-todo.svg"),
-      caseDoing: icon("status-doing.svg"),
-      caseDone: icon("status-done.svg"),
-      suiteAllDone: icon("suite-all-done.svg"),
-      suiteNotAllDone: icon("suite-not-all-done.svg"),
+      caseDoing: themedIcon("status-doing-light.svg", "status-doing.svg"),
+      caseDone: themedIcon("status-done-light.svg", "status-done.svg"),
+      suiteDefault: icon("suite-not-all-done.svg"),
+      suiteDoing: themedIcon("suite-doing-light.svg", "suite-doing.svg"),
+      suiteDone: themedIcon("suite-all-done-light.svg", "suite-all-done.svg"),
       createSuite: icon("new-folder.svg")
     };
   }
@@ -77,10 +86,10 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
       this.nodes = [
         {
           id: "guide-select-root",
-          label: "Set Root from tree title action",
+          label: this.t("Set Root from tree title action"),
           type: "guide",
           path: "",
-          description: "Use Set Root button in TLog view"
+          description: this.t("Use Set Root button in TLog view")
         }
       ];
       this.emitter.fire();
@@ -88,8 +97,10 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
     }
 
     try {
-      let nodes = await loadTree(this.rootDirectory);
-      const filters = normalizeTreeFilters(this.context.workspaceState.get<TreeFilters>(this.filterKey));
+      let nodes = await loadTree(this.rootDirectory, this.t);
+      const filters = normalizeTreeFilters(
+        this.context.workspaceState.get<TreeFilters>(this.filterKey)
+      );
 
       if (
         filters.tags.length > 0 ||
@@ -106,7 +117,9 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
 
         const snapshot = await getWorkspaceSnapshot(this.rootDirectory, searchFilters);
         const allowedCasePaths = new Set(
-          snapshot.cases.filter((item) => matchCaseWithFilters(item, filters)).map((item) => item.path)
+          snapshot.cases
+            .filter((item) => matchCaseWithFilters(item, filters))
+            .map((item) => item.path)
         );
 
         nodes = nodes.filter((node) => node.type !== "case" || allowedCasePaths.has(node.path));
@@ -118,7 +131,7 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
       this.nodes = [
         {
           id: "guide-load-error",
-          label: "Failed to load TLog root",
+          label: this.t("Failed to load TLog root"),
           type: "guide",
           path: this.rootDirectory,
           description: String(error)
@@ -135,6 +148,7 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
         : this.vscodeApi.TreeItemCollapsibleState.None;
 
     const item = new this.vscodeApi.TreeItem(element.label, collapsible);
+    item.id = element.type === "guide" ? "guide:" + element.id : element.type + ":" + element.path;
     item.description = element.description;
     item.tooltip = element.path;
     item.contextValue = element.type;
@@ -148,20 +162,26 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
       }
     }
     if (element.type === "suite") {
-      item.iconPath = element.suiteAllDone ? this.iconPaths.suiteAllDone : this.iconPaths.suiteNotAllDone;
+      if (element.suiteStatus === "done") {
+        item.iconPath = this.iconPaths.suiteDone;
+      } else if (element.suiteStatus === "doing") {
+        item.iconPath = this.iconPaths.suiteDoing;
+      } else {
+        item.iconPath = this.iconPaths.suiteDefault;
+      }
     }
     if (element.type === "guide" && element.id === "guide-create-new") {
       item.iconPath = this.iconPaths.createSuite;
       item.command = {
         command: "tlog.createSuite",
-        title: "Create Suite",
+        title: this.t("Create Suite"),
         arguments: []
       };
     }
     if (element.type !== "guide") {
       item.command = {
         command: "tlog.openManager",
-        title: "Open TLog Manager",
+        title: this.t("Open TLog Manager"),
         arguments: [element]
       };
     }
@@ -170,7 +190,9 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
 
   getChildren(element?: TreeNodeModel): Thenable<TreeNodeModel[]> {
     if (!element) {
-      return Promise.resolve(this.nodes.filter((n) => n.type === "guide" || (n.type === "suite" && !n.parentPath)));
+      return Promise.resolve(
+        this.nodes.filter((n) => n.type === "guide" || (n.type === "suite" && !n.parentPath))
+      );
     }
 
     if (element.type === "suite") {

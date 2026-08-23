@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Minor Changes
+
+- Replace TLog Manager debounce-based auto-save with a Custom Text Editor that uses VS Code dirty state, explicit save, configured Auto Save, standard close protection, undo/redo, and one YAML file per tab.
+
 ## 0.3.0
 
 ### Minor Changes

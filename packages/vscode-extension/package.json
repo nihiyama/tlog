@@ -20,6 +20,7 @@
     "Testing"
   ],
   "main": "./dist/extension.cjs",
+  "l10n": "./l10n",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -34,19 +35,31 @@
       "tlog": [
         {
           "id": "tlog.controls",
-          "name": "Controls",
+          "name": "%views.controls%",
           "type": "webview"
         },
         {
           "id": "tlog.tree",
-          "name": "Suites"
+          "name": "%views.suites%"
         }
       ]
     },
+    "customEditors": [
+      {
+        "viewType": "tlog.manager",
+        "displayName": "%customEditors.manager%",
+        "selector": [
+          {
+            "filenamePattern": "*.yaml"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "commands": [
       {
         "command": "tlog.selectRoot",
-        "title": "TLog: Set Root",
+        "title": "%commands.selectRoot%",
         "icon": {
           "light": "media/sidebar-icon.svg",
           "dark": "media/sidebar-icon.svg"
@@ -54,7 +67,7 @@
       },
       {
         "command": "tlog.searchTags",
-        "title": "TLog: Search Tags",
+        "title": "%commands.searchTags%",
         "icon": {
           "light": "media/sidebar-icon.svg",
           "dark": "media/sidebar-icon.svg"
@@ -62,7 +75,7 @@
       },
       {
         "command": "tlog.searchOwners",
-        "title": "TLog: Search Owners",
+        "title": "%commands.searchOwners%",
         "icon": {
           "light": "media/sidebar-icon.svg",
           "dark": "media/sidebar-icon.svg"
@@ -70,7 +83,7 @@
       },
       {
         "command": "tlog.clearSearch",
-        "title": "TLog: Clear Search",
+        "title": "%commands.clearSearch%",
         "icon": {
           "light": "media/sidebar-icon.svg",
           "dark": "media/sidebar-icon.svg"
@@ -78,7 +91,7 @@
       },
       {
         "command": "tlog.openManager",
-        "title": "TLog: Open Manager",
+        "title": "%commands.openManager%",
         "icon": {
           "light": "media/sidebar-icon.svg",
           "dark": "media/sidebar-icon.svg"
@@ -86,7 +99,7 @@
       },
       {
         "command": "tlog.refreshTree",
-        "title": "TLog: Refresh Tree",
+        "title": "%commands.refreshTree%",
         "icon": {
           "light": "media/sidebar-icon.svg",
           "dark": "media/sidebar-icon.svg"
@@ -94,7 +107,7 @@
       },
       {
         "command": "tlog.createSuite",
-        "title": "Create Suite",
+        "title": "%commands.createSuite%",
         "icon": {
           "light": "media/new-folder.svg",
           "dark": "media/new-folder.svg"
@@ -102,7 +115,7 @@
       },
       {
         "command": "tlog.createCase",
-        "title": "Create Case",
+        "title": "%commands.createCase%",
         "icon": {
           "light": "media/new-file.svg",
           "dark": "media/new-file.svg"
@@ -110,27 +123,27 @@
       },
       {
         "command": "tlog.filterCases",
-        "title": "TLog: Filter Cases"
+        "title": "%commands.filterCases%"
       },
       {
         "command": "tlog.showSuiteStats",
-        "title": "TLog: Show Suite Statistics"
+        "title": "%commands.showSuiteStats%"
       },
       {
         "command": "tlog.openRelated",
-        "title": "TLog: Open Related"
+        "title": "%commands.openRelated%"
       },
       {
         "command": "tlog.openRawYaml",
-        "title": "Open YAML"
+        "title": "%commands.openRawYaml%"
       },
       {
         "command": "tlog.deleteNode",
-        "title": "Delete"
+        "title": "%commands.deleteNode%"
       },
       {
         "command": "tlog.expandAllSuites",
-        "title": "Expand all",
+        "title": "%commands.expandAllSuites%",
         "icon": {
           "light": "media/chevrons-down.svg",
           "dark": "media/chevrons-down.svg"
@@ -138,7 +151,7 @@
       },
       {
         "command": "tlog.collapseAllSuites",
-        "title": "Collapse all",
+        "title": "%commands.collapseAllSuites%",
         "icon": {
           "light": "media/chevrons-up.svg",
           "dark": "media/chevrons-up.svg"
@@ -156,7 +169,7 @@
               "currentOnly"
             ],
             "default": "recursive",
-            "description": "Controls whether suite operations include descendant suites."
+            "description": "%configuration.scopeMode.description%"
           }
         }
       }

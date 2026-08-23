@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TlogTreeDataProvider } from "../src/tree-provider.js";
 
@@ -11,12 +12,13 @@ vi.mock("../src/tlog-workspace.js", () => ({
   getWorkspaceSnapshot: getWorkspaceSnapshotMock
 }));
 
-class EventEmitter<T> {
+class EventEmitter {
   public event = vi.fn();
   public fire = vi.fn();
 }
 
 class TreeItem {
+  public id?: string;
   public description?: string;
   public tooltip?: string;
   public contextValue?: string;
@@ -46,6 +48,11 @@ function createProviderContext() {
     workspaceState
   };
   return { vscodeApi, context, workspaceState };
+}
+
+function iconFileNames(item: TreeItem): { light: string; dark: string } {
+  const iconPath = item.iconPath as { light: { fsPath: string }; dark: { fsPath: string } };
+  return { light: iconPath.light.fsPath, dark: iconPath.dark.fsPath };
 }
 
 describe("TlogTreeDataProvider", () => {
@@ -235,10 +242,11 @@ describe("TlogTreeDataProvider", () => {
       label: "suite-a: A",
       type: "suite",
       path: "/tmp/tests/index.yaml",
-      suiteAllDone: false
+      suiteStatus: "default"
     });
     expect(suiteItem.command?.command).toBe("tlog.openManager");
     expect(suiteItem.collapsibleState).toBe(1);
+    expect(suiteItem.id).toBe("suite:/tmp/tests/index.yaml");
 
     const caseItem = provider.getTreeItem({
       id: "case-a",
@@ -250,6 +258,7 @@ describe("TlogTreeDataProvider", () => {
     });
     expect(caseItem.command?.command).toBe("tlog.openManager");
     expect(caseItem.collapsibleState).toBe(0);
+    expect(caseItem.id).toBe("case:/tmp/tests/case-a.yaml");
 
     const createNewItem = provider.getTreeItem({
       id: "guide-create-new",
@@ -258,6 +267,62 @@ describe("TlogTreeDataProvider", () => {
       path: "/tmp/tests"
     });
     expect(createNewItem.command?.command).toBe("tlog.createSuite");
+    expect(createNewItem.id).toBe("guide:guide-create-new");
+  });
+
+  it("assigns case and suite icons for every display status", () => {
+    const { vscodeApi, context } = createProviderContext();
+    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+
+    for (const [status, expectedLight, expectedDark] of [
+      ["todo", "status-todo.svg", "status-todo.svg"],
+      [null, "status-todo.svg", "status-todo.svg"],
+      ["doing", "status-doing-light.svg", "status-doing.svg"],
+      ["done", "status-done-light.svg", "status-done.svg"]
+    ] as const) {
+      const item = provider.getTreeItem({
+        id: "case-" + (status ?? "null"),
+        label: "Case",
+        type: "case",
+        path: "/tmp/tests/case.yaml",
+        status
+      });
+      const icons = iconFileNames(item as TreeItem);
+      expect(icons.light).toContain(expectedLight);
+      expect(icons.dark).toContain(expectedDark);
+    }
+
+    for (const [suiteStatus, expectedLight, expectedDark] of [
+      ["default", "suite-not-all-done.svg", "suite-not-all-done.svg"],
+      ["doing", "suite-doing-light.svg", "suite-doing.svg"],
+      ["done", "suite-all-done-light.svg", "suite-all-done.svg"]
+    ] as const) {
+      const item = provider.getTreeItem({
+        id: "suite-" + suiteStatus,
+        label: "Suite",
+        type: "suite",
+        path: "/tmp/tests/index.yaml",
+        suiteStatus
+      });
+      const icons = iconFileNames(item as TreeItem);
+      expect(icons.light).toContain(expectedLight);
+      expect(icons.dark).toContain(expectedDark);
+    }
+  });
+
+  it("keeps default colors and provides light and dark doing/done colors", () => {
+    const icon = (name: string) => readFileSync(new URL("../media/" + name, import.meta.url), "utf8");
+
+    expect(icon("status-todo.svg")).toContain("#adadad");
+    expect(icon("suite-not-all-done.svg")).toContain("#adadad");
+    expect(icon("status-doing-light.svg")).toContain("#a65d00");
+    expect(icon("status-doing.svg")).toContain("#cca700");
+    expect(icon("suite-doing-light.svg")).toContain("#a65d00");
+    expect(icon("suite-doing.svg")).toContain("#cca700");
+    expect(icon("status-done-light.svg")).toContain("#167a45");
+    expect(icon("status-done.svg")).toContain("#73c991");
+    expect(icon("suite-all-done-light.svg")).toContain("#167a45");
+    expect(icon("suite-all-done.svg")).toContain("#73c991");
   });
 
   it("returns children and parent relations", async () => {

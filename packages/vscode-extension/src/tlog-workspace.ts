@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { identityTranslate, type Translate } from "./localization.js";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   type IdIndex,
@@ -19,6 +20,7 @@ import {
 } from "@tlog/shared";
 
 export type NodeType = "suite" | "case" | "guide";
+export type SuiteStatus = "default" | "doing" | "done";
 
 export interface TreeNodeModel {
   id: string;
@@ -28,7 +30,13 @@ export interface TreeNodeModel {
   parentPath?: string;
   description?: string;
   status?: TestCase["status"];
-  suiteAllDone?: boolean;
+  suiteStatus?: SuiteStatus;
+}
+
+interface SuiteStatusCounts {
+  todo: number;
+  doing: number;
+  done: number;
 }
 
 export interface SuiteCard {
@@ -51,6 +59,8 @@ export interface CaseCard {
   tags: string[];
   suiteId?: string;
   suiteOwners: string[];
+  suiteTags: string[];
+  suiteScoped: boolean;
   issueCount: number;
   issueStatuses: string[];
   issueOwners: string[];
@@ -95,28 +105,122 @@ export async function findSuiteFiles(rootDir: string): Promise<string[]> {
 async function findCaseFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".yaml") && entry.name !== SUITE_FILE && !entry.name.endsWith(".suite.yaml"))
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.endsWith(".yaml") &&
+        entry.name !== SUITE_FILE &&
+        !entry.name.endsWith(".suite.yaml")
+    )
     .map((entry) => join(dir, entry.name))
     .sort();
 }
 
-export async function loadTree(rootDir: string): Promise<TreeNodeModel[]> {
+function addStatusCounts(target: SuiteStatusCounts, source: SuiteStatusCounts): void {
+  target.todo += source.todo;
+  target.doing += source.doing;
+  target.done += source.done;
+}
+
+function toSuiteStatus(counts: SuiteStatusCounts): SuiteStatus {
+  const total = counts.todo + counts.doing + counts.done;
+  if (total === 0) {
+    return "default";
+  }
+  if (counts.doing > 0 || (counts.todo > 0 && counts.done > 0)) {
+    return "doing";
+  }
+  return counts.done === total ? "done" : "default";
+}
+
+export function assignSuiteStatuses(nodes: TreeNodeModel[]): void {
+  const suitesByPath = new Map(
+    nodes.filter((node) => node.type === "suite").map((node) => [node.path, node] as const)
+  );
+  const countsBySuitePath = new Map<string, SuiteStatusCounts>();
+  const remainingChildrenBySuitePath = new Map<string, number>();
+
+  for (const suitePath of suitesByPath.keys()) {
+    countsBySuitePath.set(suitePath, { todo: 0, doing: 0, done: 0 });
+    remainingChildrenBySuitePath.set(suitePath, 0);
+  }
+
+  for (const node of nodes) {
+    if (node.type === "suite" && node.parentPath && suitesByPath.has(node.parentPath)) {
+      remainingChildrenBySuitePath.set(
+        node.parentPath,
+        (remainingChildrenBySuitePath.get(node.parentPath) ?? 0) + 1
+      );
+      continue;
+    }
+    if (node.type !== "case" || !node.parentPath) {
+      continue;
+    }
+    const counts = countsBySuitePath.get(node.parentPath);
+    if (!counts) {
+      continue;
+    }
+    if (node.status === "doing") {
+      counts.doing += 1;
+    } else if (node.status === "done") {
+      counts.done += 1;
+    } else {
+      counts.todo += 1;
+    }
+  }
+
+  const pendingSuitePaths = [...remainingChildrenBySuitePath.entries()]
+    .filter(([, remainingChildren]) => remainingChildren === 0)
+    .map(([suitePath]) => suitePath);
+
+  while (pendingSuitePaths.length > 0) {
+    const suitePath = pendingSuitePaths.pop();
+    if (!suitePath) {
+      continue;
+    }
+    const suiteNode = suitesByPath.get(suitePath);
+    const counts = countsBySuitePath.get(suitePath);
+    if (!suiteNode || !counts) {
+      continue;
+    }
+
+    suiteNode.suiteStatus = toSuiteStatus(counts);
+    if (!suiteNode.parentPath || !suitesByPath.has(suiteNode.parentPath)) {
+      continue;
+    }
+
+    const parentCounts = countsBySuitePath.get(suiteNode.parentPath);
+    if (parentCounts) {
+      addStatusCounts(parentCounts, counts);
+    }
+    const remainingChildren = (remainingChildrenBySuitePath.get(suiteNode.parentPath) ?? 1) - 1;
+    remainingChildrenBySuitePath.set(suiteNode.parentPath, remainingChildren);
+    if (remainingChildren === 0) {
+      pendingSuitePaths.push(suiteNode.parentPath);
+    }
+  }
+}
+
+export async function loadTree(
+  rootDir: string,
+  t: Translate = identityTranslate
+): Promise<TreeNodeModel[]> {
   const suiteFiles = await findSuiteFiles(rootDir);
   if (suiteFiles.length === 0) {
     return [
       {
         id: "guide-no-index",
-        label: "index.yaml not found",
+        label: t("index.yaml not found"),
         type: "guide",
         path: rootDir,
-        description: "Run `tlog init` or create suite index.yaml"
+        description: t("Run `tlog init` or create suite index.yaml")
       },
       {
         id: "guide-create-new",
-        label: "Create New",
+        label: t("Create New"),
         type: "guide",
         path: rootDir,
-        description: "Create first suite in this root"
+        description: t("Create first suite in this root")
       }
     ];
   }
@@ -132,11 +236,16 @@ export async function loadTree(rootDir: string): Promise<TreeNodeModel[]> {
     const parentSuitePath = suitePathSet.has(parentIndex) ? parentIndex : undefined;
     const suiteNode: TreeNodeModel = {
       id: suite.id,
-      label: suiteValidation.ok && suiteValidation.data ? `${suite.id}: ${suite.title}` : `${suite.id}: ${suite.title} (invalid)`,
+      label:
+        suiteValidation.ok && suiteValidation.data
+          ? `${suite.id}: ${suite.title}`
+          : `${suite.id}: ${suite.title} (${t("invalid")})`,
       type: "suite",
       path: suiteFile,
       parentPath: parentSuitePath,
-      description: suiteValidation.ok ? undefined : suiteValidation.errors.map((error) => error.message).join(", ")
+      description: suiteValidation.ok
+        ? undefined
+        : suiteValidation.errors.map((error) => error.message).join(", ")
     };
 
     nodes.push(suiteNode);
@@ -148,33 +257,21 @@ export async function loadTree(rootDir: string): Promise<TreeNodeModel[]> {
       const status = testCase.status ?? null;
       nodes.push({
         id: testCase.id,
-        label: caseValidation.ok ? `${testCase.id}: ${testCase.title}` : `${testCase.id}: ${testCase.title} (invalid)`,
+        label: caseValidation.ok
+          ? `${testCase.id}: ${testCase.title}`
+          : `${testCase.id}: ${testCase.title} (${t("invalid")})`,
         type: "case",
         path: caseFile,
         parentPath: suiteFile,
-        description: caseValidation.ok ? undefined : caseValidation.errors.map((error) => error.message).join(", "),
+        description: caseValidation.ok
+          ? undefined
+          : caseValidation.errors.map((error) => error.message).join(", "),
         status
       });
     }
   }
 
-  const casesBySuitePath = new Map<string, TreeNodeModel[]>();
-  for (const node of nodes) {
-    if (node.type !== "case" || !node.parentPath) {
-      continue;
-    }
-    const items = casesBySuitePath.get(node.parentPath) ?? [];
-    items.push(node);
-    casesBySuitePath.set(node.parentPath, items);
-  }
-
-  for (const node of nodes) {
-    if (node.type !== "suite") {
-      continue;
-    }
-    const suiteCases = casesBySuitePath.get(node.path) ?? [];
-    node.suiteAllDone = suiteCases.length > 0 && suiteCases.every((item) => item.status === "done");
-  }
+  assignSuiteStatuses(nodes);
 
   return nodes;
 }
@@ -264,7 +361,10 @@ export async function updateCase(
 
 export async function updateSuite(
   path: string,
-  patch: Pick<Suite, "title" | "description" | "tags" | "scoped" | "owners" | "duration" | "related" | "remarks">
+  patch: Pick<
+    Suite,
+    "title" | "description" | "tags" | "scoped" | "owners" | "duration" | "related" | "remarks"
+  >
 ): Promise<void> {
   const current = await readYamlFile<Suite>(path);
   const updated: Suite = {
@@ -288,10 +388,16 @@ export async function updateSuite(
 }
 
 function uniqueNonEmpty(values: string[]): string[] {
-  return Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
+  return Array.from(
+    new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))
+  );
 }
 
-export async function syncReciprocalRelated(rootDir: string, sourceId: string, relatedIds: string[]): Promise<void> {
+export async function syncReciprocalRelated(
+  rootDir: string,
+  sourceId: string,
+  relatedIds: string[]
+): Promise<void> {
   const index = await buildIdIndex(rootDir);
   const resolved = resolveRelated(index, { related: uniqueNonEmpty(relatedIds) }).resolved;
 
@@ -303,7 +409,10 @@ export async function syncReciprocalRelated(rootDir: string, sourceId: string, r
     if (target.type === "suite") {
       const current = await readYamlFile<Suite>(target.path);
       const nextRelated = uniqueNonEmpty([...(current.related ?? []), sourceId]);
-      if (nextRelated.length === (current.related ?? []).length && nextRelated.every((item, idx) => item === current.related[idx])) {
+      if (
+        nextRelated.length === (current.related ?? []).length &&
+        nextRelated.every((item, idx) => item === current.related[idx])
+      ) {
         continue;
       }
 
@@ -321,7 +430,10 @@ export async function syncReciprocalRelated(rootDir: string, sourceId: string, r
 
     const current = await readYamlFile<TestCase>(target.path);
     const nextRelated = uniqueNonEmpty([...(current.related ?? []), sourceId]);
-    if (nextRelated.length === (current.related ?? []).length && nextRelated.every((item, idx) => item === current.related[idx])) {
+    if (
+      nextRelated.length === (current.related ?? []).length &&
+      nextRelated.every((item, idx) => item === current.related[idx])
+    ) {
       continue;
     }
 
@@ -354,7 +466,10 @@ export function resolveRelatedIds(index: IdIndex, related: string[]): string[] {
   return resolveRelated(index, { related }).resolved.map((item) => item.id);
 }
 
-export async function getWorkspaceSnapshot(rootDir: string, filters: SearchFilters = {}): Promise<WorkspaceSnapshot> {
+export async function getWorkspaceSnapshot(
+  rootDir: string,
+  filters: SearchFilters = {}
+): Promise<WorkspaceSnapshot> {
   const nodes = await loadTree(rootDir);
   const suites: SuiteCard[] = [];
   const suiteMap = new Map<string, Suite>();
@@ -385,19 +500,55 @@ export async function getWorkspaceSnapshot(rootDir: string, filters: SearchFilte
         description: testCase.description,
         owners: testCase.owners,
         tags: testCase.tags,
-        suiteId: nodes.find((candidate) => candidate.type === "suite" && candidate.path === node.parentPath)?.id,
-        suiteOwners: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.owners : [],
+        suiteId: nodes.find(
+          (candidate) => candidate.type === "suite" && candidate.path === node.parentPath
+        )?.id,
+        suiteOwners:
+          node.parentPath && suiteMap.get(node.parentPath)
+            ? suiteMap.get(node.parentPath)!.owners
+            : [],
+        suiteTags: [],
+        suiteScoped: true,
         issueCount: testCase.issues.length,
         issueStatuses: Array.from(new Set(testCase.issues.map((issue) => issue.status))),
         issueOwners: Array.from(new Set(testCase.issues.flatMap((issue) => issue.owners ?? []))),
-        scheduledStart: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.duration.scheduled.start : undefined,
-        scheduledEnd: node.parentPath && suiteMap.get(node.parentPath) ? suiteMap.get(node.parentPath)!.duration.scheduled.end : undefined
+        scheduledStart:
+          node.parentPath && suiteMap.get(node.parentPath)
+            ? suiteMap.get(node.parentPath)!.duration.scheduled.start
+            : undefined,
+        scheduledEnd:
+          node.parentPath && suiteMap.get(node.parentPath)
+            ? suiteMap.get(node.parentPath)!.duration.scheduled.end
+            : undefined
       });
     }
   }
 
+  const suiteNodesByPath = new Map(
+    nodes.filter((node) => node.type === "suite").map((node) => [node.path, node] as const)
+  );
+  const caseNodesByPath = new Map(
+    nodes.filter((node) => node.type === "case").map((node) => [node.path, node] as const)
+  );
+  for (const testCase of cases) {
+    const inheritedTags: string[] = [];
+    let suiteScoped = true;
+    let suitePath = caseNodesByPath.get(testCase.path)?.parentPath;
+    while (suitePath) {
+      const suite = suiteMap.get(suitePath);
+      if (suite) {
+        inheritedTags.push(...suite.tags);
+        suiteScoped = suiteScoped && suite.scoped !== false;
+      }
+      suitePath = suiteNodesByPath.get(suitePath)?.parentPath;
+    }
+    testCase.suiteTags = Array.from(new Set(inheritedTags));
+    testCase.suiteScoped = suiteScoped;
+  }
+
   const caseEntities = casesToTestCase(cases);
-  const filtered = Object.keys(filters).length > 0 ? filterEntities(caseEntities, filters).items : caseEntities;
+  const filtered =
+    Object.keys(filters).length > 0 ? filterEntities(caseEntities, filters).items : caseEntities;
   const allowedPaths = new Set(filtered.map((item) => item.path));
 
   return {
@@ -411,7 +562,7 @@ function casesToTestCase(cases: CaseCard[]): Array<TestCase & { path: string }> 
     id: item.id,
     title: item.title,
     owners: item.owners,
-    tags: item.tags,
+    tags: Array.from(new Set([...item.tags, ...item.suiteTags])),
     description: item.description,
     scoped: item.scoped,
     status: item.status,
