@@ -11,19 +11,19 @@ import {
   getWorkspaceSnapshot,
   parseYamlDocument,
   resolveRelatedIds,
-  syncReciprocalRelated,
-  updateCase,
-  updateSuite
+  syncReciprocalRelated
 } from "./tlog-workspace.js";
 import { defaultTreeFilters, matchCaseWithFilters, normalizeTreeFilters, type TreeFilters } from "./filters.js";
+import { applyManagerEdit, getManagerDocumentRelated, type ManagerEditMessage } from "./manager-document.js";
 import { directoryExists, isInsideRoot, pickRootPath } from "./path-utils.js";
-import { splitCsv, splitLines } from "./string-utils.js";
+import { splitCsv } from "./string-utils.js";
 import { TlogTreeDataProvider } from "./tree-provider.js";
 import { controlsHtml, managerHtml } from "./webviews.js";
 
 const ROOT_KEY = "tlog.rootDirectory";
 const FILTER_KEY = "tlog.treeFilters";
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const MANAGER_VIEW_TYPE = "tlog.manager";
 
 type ControlsMessage =
   | { type: "ready" }
@@ -42,11 +42,14 @@ type ControlsMessage =
 
 type ManagerMessage =
   | { type: "ready" }
+  | { type: "save" }
+  | { type: "undo" }
+  | { type: "redo" }
   | { type: "openRaw"; path: string }
   | { type: "jumpToCase"; path: string }
   | { type: "jumpToPath"; path: string; entityType?: "suite" | "case" }
   | {
-      type: "saveSuite";
+      type: "editSuite";
       path: string;
       id: string;
       title: string;
@@ -62,7 +65,7 @@ type ManagerMessage =
       remarks: string;
     }
   | {
-      type: "saveCase";
+      type: "editCase";
       path: string;
       id: string;
       title: string;
@@ -111,30 +114,11 @@ function buildRelatedOptions(snapshot: Awaited<ReturnType<typeof getWorkspaceSna
   return options;
 }
 
-function normalizeRelatedRefs(rawValues: string[], options: RelatedOption[]): string[] {
-  const byRef = new Map<string, string>();
-  for (const option of options) {
-    byRef.set(option.ref, option.id);
-    byRef.set(option.id, option.id);
-  }
-  return Array.from(
-    new Set(
-      rawValues
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0)
-        .map((value) => byRef.get(value) ?? value)
-    )
-  );
-}
-
 function isValidEntityId(id: string): boolean {
   return ID_PATTERN.test(id);
 }
 
-let managerPanel: vscode.WebviewPanel | undefined;
 let controlsView: vscode.WebviewView | undefined;
-let managerSelection: { type: "suite" | "case"; path: string } | undefined;
-let suppressManagerSnapshotUntil = 0;
 
 function isPathInside(parentDir: string, targetPath: string): boolean {
   const rel = relative(parentDir, targetPath);
@@ -144,7 +128,9 @@ function isPathInside(parentDir: string, targetPath: string): boolean {
 async function postSnapshot(
   panel: vscode.WebviewPanel,
   rootDirectory: string | undefined,
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
+  selection: { type: "suite" | "case"; path: string },
+  document?: vscode.TextDocument
 ): Promise<void> {
   if (!rootDirectory) {
     await panel.webview.postMessage({ type: "snapshot", payload: { root: "", suites: [], cases: [] } });
@@ -160,9 +146,10 @@ async function postSnapshot(
   const snapshot = await getWorkspaceSnapshot(rootDirectory, searchFilters);
   const allSnapshot = await getWorkspaceSnapshot(rootDirectory);
   const filteredCases = snapshot.cases.filter((item) => matchCaseWithFilters(item, filters));
-  const selection = managerSelection;
-  const selectedSuiteCard = selection?.type === "suite" ? snapshot.suites.find((suite) => suite.path === selection.path) ?? null : null;
-  const selectedCaseCard = selection?.type === "case" ? filteredCases.find((item) => item.path === selection.path) ?? null : null;
+  const selectedSuiteCard =
+    selection?.type === "suite" ? allSnapshot.suites.find((suite) => suite.path === selection.path) ?? null : null;
+  const selectedCaseCard =
+    selection?.type === "case" ? allSnapshot.cases.find((item) => item.path === selection.path) ?? null : null;
   const relatedOptions = buildRelatedOptions(allSnapshot);
   const relatedRefById = relatedOptions.reduce<Record<string, string>>((acc, item) => {
     if (!acc[item.id]) {
@@ -173,14 +160,22 @@ async function postSnapshot(
   const selectedSuite =
     selectedSuiteCard !== null
       ? ({
-          ...parseYaml<Suite>(await readFile(selectedSuiteCard.path, "utf8")),
+          ...parseYaml<Suite>(
+            document?.uri.fsPath === selectedSuiteCard.path
+              ? document.getText()
+              : await readFile(selectedSuiteCard.path, "utf8")
+          ),
           path: selectedSuiteCard.path
         } as Suite & { path: string })
       : null;
   const selectedCase =
     selectedCaseCard !== null
       ? ({
-          ...parseYaml<TestCase>(await readFile(selectedCaseCard.path, "utf8")),
+          ...parseYaml<TestCase>(
+            document?.uri.fsPath === selectedCaseCard.path
+              ? document.getText()
+              : await readFile(selectedCaseCard.path, "utf8")
+          ),
           path: selectedCaseCard.path,
           suiteId: selectedCaseCard.suiteId,
           suiteOwners: selectedCaseCard.suiteOwners,
@@ -227,7 +222,8 @@ async function postSnapshot(
       suiteCases,
       suiteBurndown,
       relatedOptions,
-      relatedRefById
+      relatedRefById,
+      dirty: document?.isDirty ?? false
     }
   });
 }
@@ -301,149 +297,194 @@ async function openManager(
     }
   }
 
-  if (!managerPanel) {
-    managerPanel = vscodeApi.window.createWebviewPanel("tlog.manager", "TLog Manager", vscodeApi.ViewColumn.One, {
-      enableScripts: true,
-      retainContextWhenHidden: true
-    });
-    managerPanel.webview.html = managerHtml();
-    managerPanel.onDidDispose(() => {
-      managerPanel = undefined;
-      managerSelection = undefined;
-    });
+  if (!selectedNode || (selectedNode.type !== "suite" && selectedNode.type !== "case")) {
+    vscodeApi.window.showErrorMessage("Select a suite or case first.");
+    return;
+  }
 
-    managerPanel.webview.onDidReceiveMessage((message: ManagerMessage) => {
-      void (async () => {
-        if (!managerPanel) {
-          return;
-        }
+  if (onSelectionChanged) {
+    await onSelectionChanged(selectedNode.path);
+  }
+  await vscodeApi.commands.executeCommand(
+    "vscode.openWith",
+    vscodeApi.Uri.file(selectedNode.path),
+    MANAGER_VIEW_TYPE,
+    vscodeApi.ViewColumn.Active
+  );
+}
 
-        try {
-          if (message.type === "ready") {
-            await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-            return;
-          }
+interface ManagerEditorSession {
+  document: vscode.TextDocument;
+  panel: vscode.WebviewPanel;
+  selection: { type: "suite" | "case"; path: string };
+  pendingOperations: Promise<void>;
+  relatedOptions: RelatedOption[];
+  rootDirectory: string | undefined;
+}
 
-          if (message.type === "openRaw") {
-            await vscodeApi.commands.executeCommand("vscode.open", vscodeApi.Uri.file(message.path));
-            return;
-          }
+function managerDocumentType(path: string): "suite" | "case" {
+  return path.endsWith("index.yaml") || path.endsWith(".suite.yaml") ? "suite" : "case";
+}
 
-          if (message.type === "jumpToCase") {
-            managerSelection = { type: "case", path: message.path };
-            if (onSelectionChanged) {
-              await onSelectionChanged(message.path);
-            }
-            await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-            return;
-          }
+function registerManagerCustomEditor(
+  vscodeApi: typeof vscode,
+  context: vscode.ExtensionContext,
+  provider: TlogTreeDataProvider
+): void {
+  const sessions = new Set<ManagerEditorSession>();
 
-          if (message.type === "jumpToPath") {
-            const node = provider.getNodes().find((item) => item.path === message.path);
-            const targetType = message.entityType ?? (node?.type === "suite" || node?.type === "case" ? node.type : "case");
-            managerSelection = { type: targetType, path: message.path };
-            if (onSelectionChanged) {
-              await onSelectionChanged(message.path);
-            }
-            await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-            return;
-          }
+  const postSessionSnapshot = async (session: ManagerEditorSession): Promise<void> => {
+    await postSnapshot(
+      session.panel,
+      session.rootDirectory,
+      context,
+      session.selection,
+      session.document
+    );
+  };
 
-          if (message.type === "saveSuite") {
-            suppressManagerSnapshotUntil = Date.now() + 1500;
-            const rootDirectory = provider.getRootDirectory();
-            const relatedOptions = rootDirectory ? buildRelatedOptions(await getWorkspaceSnapshot(rootDirectory)) : [];
-            const normalizedRelated = normalizeRelatedRefs(splitCsv(message.related), relatedOptions);
-            await updateSuite(message.path, {
-              title: message.title,
-              description: message.description,
-              tags: splitCsv(message.tags),
-              scoped: message.scoped,
-              owners: splitCsv(message.owners),
-              duration: {
-                scheduled: {
-                  start: message.scheduledStart as Suite["duration"]["scheduled"]["start"],
-                  end: message.scheduledEnd as Suite["duration"]["scheduled"]["end"]
-                },
-                actual: {
-                  start: message.actualStart as Suite["duration"]["actual"]["start"],
-                  end: message.actualEnd as Suite["duration"]["actual"]["end"]
+  const openManagerPath = async (path: string): Promise<void> => {
+    await vscodeApi.commands.executeCommand(
+      "vscode.openWith",
+      vscodeApi.Uri.file(path),
+      MANAGER_VIEW_TYPE,
+      vscodeApi.ViewColumn.Active
+    );
+  };
+
+  context.subscriptions.push(
+    vscodeApi.window.registerCustomEditorProvider(
+      MANAGER_VIEW_TYPE,
+      {
+        async resolveCustomTextEditor(document, panel) {
+          const rootDirectory = provider.getRootDirectory();
+          const relatedOptions = rootDirectory
+            ? buildRelatedOptions(await getWorkspaceSnapshot(rootDirectory))
+            : [];
+          const session: ManagerEditorSession = {
+            document,
+            panel,
+            selection: { type: managerDocumentType(document.uri.fsPath), path: document.uri.fsPath },
+            pendingOperations: Promise.resolve(),
+            relatedOptions,
+            rootDirectory
+          };
+          sessions.add(session);
+          panel.iconPath = vscodeApi.Uri.joinPath(context.extensionUri, "media", "manager-tab-icon.svg");
+          panel.webview.options = { enableScripts: true };
+          panel.webview.html = managerHtml();
+          panel.onDidDispose(() => {
+            sessions.delete(session);
+          });
+
+          panel.webview.onDidReceiveMessage((message: ManagerMessage) => {
+            session.pendingOperations = session.pendingOperations
+              .then(async () => {
+                if (message.type === "ready") {
+                  await postSessionSnapshot(session);
+                  return;
                 }
-              },
-              related: normalizedRelated,
-              remarks: splitLines(message.remarks)
-            });
-            if (rootDirectory) {
-              await syncReciprocalRelated(rootDirectory, message.id, normalizedRelated);
-            }
-            await provider.refresh();
-            return;
-          }
+                if (message.type === "save") {
+                  await panel.webview.postMessage({ type: "saving" });
+                  const saved = await document.save();
+                  if (!saved) {
+                    throw new Error("VS Code could not save the TLog document.");
+                  }
+                  await panel.webview.postMessage({ type: "saved" });
+                  return;
+                }
+                if (message.type === "undo" || message.type === "redo") {
+                  await vscodeApi.commands.executeCommand(message.type);
+                  await postSessionSnapshot(session);
+                  return;
+                }
+                if (message.type === "openRaw") {
+                  await vscodeApi.commands.executeCommand("vscode.open", vscodeApi.Uri.file(message.path));
+                  return;
+                }
+                if (message.type === "jumpToCase" || message.type === "jumpToPath") {
+                  await openManagerPath(message.path);
+                  return;
+                }
+                if (message.type === "editSuite" || message.type === "editCase") {
+                  const nextText = applyManagerEdit(
+                    document.getText(),
+                    message as ManagerEditMessage,
+                    session.relatedOptions
+                  );
+                  if (nextText === document.getText()) {
+                    return;
+                  }
 
-          if (message.type === "saveCase") {
-            suppressManagerSnapshotUntil = Date.now() + 1500;
-            const rootDirectory = provider.getRootDirectory();
-            const relatedOptions = rootDirectory ? buildRelatedOptions(await getWorkspaceSnapshot(rootDirectory)) : [];
-            const normalizedRelated = normalizeRelatedRefs(splitCsv(message.related), relatedOptions);
-            await updateCase(message.path, {
-              title: message.title,
-              description: message.description,
-              tags: splitCsv(message.tags),
-              owners: splitCsv(message.owners),
-              scoped: message.scoped,
-              status: message.status,
-              operations: message.operations,
-              related: normalizedRelated,
-              remarks: splitLines(message.remarks),
-              completedDay:
-                message.completedDay.trim().length > 0 ? (message.completedDay as TestCase["completedDay"]) : null,
-              tests: message.tests,
-              issues: message.issues.map((issue) => ({
-                ...issue,
-                owners: Array.isArray(issue.owners) ? issue.owners : [],
-                related: normalizeRelatedRefs(issue.related ?? [], relatedOptions),
-                remarks: issue.remarks ?? []
-              }))
-            });
-            if (rootDirectory) {
-              await syncReciprocalRelated(rootDirectory, message.id, normalizedRelated);
-            }
-            await provider.refresh();
-            return;
+                  const edit = new vscodeApi.WorkspaceEdit();
+                  edit.replace(
+                    document.uri,
+                    new vscodeApi.Range(
+                      document.positionAt(0),
+                      document.positionAt(document.getText().length)
+                    ),
+                    nextText
+                  );
+                  const applied = await vscodeApi.workspace.applyEdit(edit);
+                  if (!applied) {
+                    throw new Error("VS Code could not apply the TLog edit.");
+                  }
+                  await panel.webview.postMessage({ type: "dirty" });
+                }
+              })
+              .catch(async (error) => {
+                await panel.webview.postMessage({ type: "error", message: String(error) });
+              });
+          });
+        }
+      },
+      {
+        supportsMultipleEditorsPerDocument: false,
+        webviewOptions: { retainContextWhenHidden: true }
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscodeApi.workspace.onDidSaveTextDocument((document) => {
+      const documentSessions = [...sessions].filter((session) => session.document === document);
+      if (documentSessions.length === 0) {
+        return;
+      }
+
+      void (async () => {
+        try {
+          const rootDirectory = documentSessions[0]?.rootDirectory;
+          const source = getManagerDocumentRelated(document.getText(), document.uri.fsPath);
+          if (rootDirectory) {
+            await syncReciprocalRelated(rootDirectory, source.id, source.related);
           }
+          await provider.refresh();
+          await Promise.all(
+            documentSessions.map((session) => session.panel.webview.postMessage({ type: "saved" }))
+          );
         } catch (error) {
-          if (managerPanel) {
-            await managerPanel.webview.postMessage({ type: "error", message: String(error) });
-          }
+          await Promise.all(
+            documentSessions.map((session) =>
+              session.panel.webview.postMessage({ type: "error", message: String(error) })
+            )
+          );
         }
       })();
-    });
-  } else {
-    managerPanel.reveal(vscodeApi.ViewColumn.One);
-  }
-
-  if (selectedNode && (selectedNode.type === "suite" || selectedNode.type === "case")) {
-    managerSelection = { type: selectedNode.type, path: selectedNode.path };
-    if (onSelectionChanged) {
-      await onSelectionChanged(selectedNode.path);
-    }
-  }
-
-  await postSnapshot(managerPanel, provider.getRootDirectory(), context);
+    })
+  );
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const vscodeApi = await import("vscode");
   await context.workspaceState.update(FILTER_KEY, defaultTreeFilters());
   const provider = new TlogTreeDataProvider(vscodeApi, context, ROOT_KEY, FILTER_KEY);
+  registerManagerCustomEditor(vscodeApi, context, provider);
   const tree = vscodeApi.window.createTreeView("tlog.tree", { treeDataProvider: provider });
   context.subscriptions.push(tree);
 
   const refreshAllViews = async (): Promise<void> => {
     await provider.refresh();
-    if (managerPanel) {
-      await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-    }
   };
 
   const revealNodeByPath = async (path: string): Promise<boolean> => {
@@ -477,10 +518,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onYamlChanged = (uri: vscode.Uri): void => {
     const root = provider.getRootDirectory();
     if (!root || !isInsideRoot(root, uri.fsPath)) {
-      return;
-    }
-    if (Date.now() < suppressManagerSnapshotUntil) {
-      void provider.refresh();
       return;
     }
     void refreshAllViews();
@@ -517,9 +554,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               }
               await provider.setRootDirectory(root);
               await postControlsState(provider.getRootDirectory(), filters, `Root: ${root}`);
-              if (managerPanel) {
-                await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-              }
               return;
             }
 
@@ -530,9 +564,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               }
               await provider.setRootDirectory(message.path);
               await postControlsState(provider.getRootDirectory(), filters, `Root: ${message.path}`);
-              if (managerPanel) {
-                await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-              }
               return;
             }
 
@@ -548,9 +579,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               await context.workspaceState.update(FILTER_KEY, next);
               await provider.refresh();
               await postControlsState(provider.getRootDirectory(), next, "Search applied");
-              if (managerPanel) {
-                await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-              }
               return;
             }
 
@@ -559,9 +587,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               await context.workspaceState.update(FILTER_KEY, next);
               await provider.refresh();
               await postControlsState(provider.getRootDirectory(), next, "Search cleared");
-              if (managerPanel) {
-                await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-              }
             }
           })();
         });
@@ -580,9 +605,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await provider.setRootDirectory(root);
       const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
       await postControlsState(provider.getRootDirectory(), filters, `Root: ${root}`);
-      if (managerPanel) {
-        await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-      }
     })
   );
 
@@ -600,9 +622,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await context.workspaceState.update(FILTER_KEY, current);
       await provider.refresh();
       await postControlsState(provider.getRootDirectory(), current, "Search applied");
-      if (managerPanel) {
-        await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-      }
     })
   );
 
@@ -620,9 +639,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await context.workspaceState.update(FILTER_KEY, current);
       await provider.refresh();
       await postControlsState(provider.getRootDirectory(), current, "Search applied");
-      if (managerPanel) {
-        await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-      }
     })
   );
 
@@ -631,9 +647,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await context.workspaceState.update(FILTER_KEY, defaultTreeFilters());
       await provider.refresh();
       await postControlsState(provider.getRootDirectory(), defaultTreeFilters(), "Search cleared");
-      if (managerPanel) {
-        await postSnapshot(managerPanel, provider.getRootDirectory(), context);
-      }
     })
   );
 

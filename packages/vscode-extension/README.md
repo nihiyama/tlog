@@ -26,7 +26,7 @@ TLog adds a dedicated Activity Bar view for browsing suites/cases, filtering exe
    - `Set Root` with a typed path, or
    - `Browse` to pick a folder.
 4. Use the `Suites` tree to open a suite/case in `TLog Manager`.
-5. Edit fields in the manager. Changes are auto-saved to YAML.
+5. Edit fields in the manager. Unsaved changes stay in the VS Code document until you save with the Manager Save button, `Ctrl+S` / `Cmd+S`, or configured Auto Save.
 
 ![Set Root and Search Filters](./docs/images/controls-root-and-search.png)
 
@@ -69,9 +69,9 @@ Filter UX details:
 - Active filters are shown as chips and removable individually.
 - `Clear all filters` resets everything to defaults.
 
-### 3) TLog Manager (Webview Panel)
+### 3) TLog Manager (Custom Text Editor)
 
-`TLog Manager` is a persistent editor panel (`retainContextWhenHidden: true`) with two editing modes.
+`TLog Manager` is a VS Code custom text editor with one tab per YAML file. Opening another suite or case creates or reveals its own Manager tab, so unsaved work in the current tab is preserved.
 
 #### Suite editor
 
@@ -108,9 +108,12 @@ Editable fields include:
 
 Editor behavior:
 
-- Save is auto-triggered on field changes (debounced).
-- Save status is shown in panel header (`saving`, `saved`, `error`).
-- Related references are normalized against known IDs.
+- Field changes update an in-memory VS Code `TextDocument` and show the standard dirty indicator without writing YAML immediately.
+- Save from the button next to `Open YAML`, with `Ctrl+S` / `Cmd+S`, or through configured VS Code Auto Save.
+- Closing a dirty tab uses VS Code's standard Save / Don't Save / Cancel flow.
+- Standard VS Code undo / redo, discard, backup, and hot exit behavior applies.
+- Save status is shown in the panel header (`saving`, `saved`, `error`).
+- Related references are normalized against known IDs when the document draft is updated.
 
 ![TLog Manager Suite Editor](./docs/images/manager-suite-editor.png)
 

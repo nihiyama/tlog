@@ -140,6 +140,10 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
         : this.vscodeApi.TreeItemCollapsibleState.None;
 
     const item = new this.vscodeApi.TreeItem(element.label, collapsible);
+    item.id =
+      element.type === "guide"
+        ? "guide:" + element.id
+        : element.type + ":" + element.path;
     item.description = element.description;
     item.tooltip = element.path;
     item.contextValue = element.type;

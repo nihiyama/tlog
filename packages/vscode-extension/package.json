@@ -43,6 +43,18 @@
         }
       ]
     },
+    "customEditors": [
+      {
+        "viewType": "tlog.manager",
+        "displayName": "TLog Manager",
+        "selector": [
+          {
+            "filenamePattern": "*.yaml"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "commands": [
       {
         "command": "tlog.selectRoot",

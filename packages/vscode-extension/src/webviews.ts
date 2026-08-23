@@ -573,6 +573,7 @@ export function managerHtml(): string {
       }
       .muted { color: var(--vscode-descriptionForeground); font-size: 12px; }
       .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .headActions { display: inline-flex; align-items: center; gap: 6px; }
       .iconBtn {
         width: 30px;
         height: 30px;
@@ -695,11 +696,7 @@ export function managerHtml(): string {
       const detailEl = document.getElementById('detail');
       const contextEl = document.getElementById('context');
       const saveStateEl = document.getElementById('saveState');
-      let snapshot = { root: '', suites: [], cases: [], selectedSuite: null, selectedCase: null, suiteCases: [], suiteBurndown: null, relatedOptions: [], relatedRefById: {} };
-      let suppressSnapshotUntil = 0;
-      let pendingSnapshot = null;
-      let pendingSnapshotTimer = null;
-      let saveStateTimer = null;
+      let snapshot = { root: '', suites: [], cases: [], selectedSuite: null, selectedCase: null, suiteCases: [], suiteBurndown: null, relatedOptions: [], relatedRefById: {}, dirty: false };
       function esc(v){ return (v || '').replace(/"/g, '&quot;'); }
       function escAttr(v){ return String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
       function setSaveState(kind, text) {
@@ -709,27 +706,12 @@ export function managerHtml(): string {
       function fileIcon() {
         return '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 1.5h6.8L13 4.7V14.5H3z" stroke="currentColor" stroke-width="1.2"/><path d="M9.8 1.5v3.2H13" stroke="currentColor" stroke-width="1.2"/></svg>';
       }
-      function schedulePendingSnapshotApply() {
-        if (pendingSnapshotTimer) {
-          clearTimeout(pendingSnapshotTimer);
-        }
-        const wait = Math.max(0, suppressSnapshotUntil - Date.now()) + 60;
-        pendingSnapshotTimer = setTimeout(() => {
-          if (!pendingSnapshot) {
-            return;
-          }
-          snapshot = pendingSnapshot;
-          pendingSnapshot = null;
-          render();
-        }, wait);
+      function saveIcon() {
+        return '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 2.5h9l2 2v9h-11z" stroke="currentColor" stroke-width="1.2"/><path d="M5 2.5v4h5v-4M5 13v-4h6v4" stroke="currentColor" stroke-width="1.2"/></svg>';
       }
-      function bindAutoPersist(card, buildMessage, buildInitialMessage) {
+      function bindDocumentDraft(card, buildMessage, buildInitialMessage) {
         const initialMessage = buildInitialMessage ? buildInitialMessage() : buildMessage();
         let lastSent = JSON.stringify(initialMessage);
-        let debounceTimer = null;
-        const markEditing = () => {
-          suppressSnapshotUntil = Date.now() + 1200;
-        };
         const flush = () => {
           if (!document.body.contains(card)) {
             return;
@@ -740,40 +722,24 @@ export function managerHtml(): string {
             return;
           }
           lastSent = serialized;
-          setSaveState('saving', 'Saving...');
+          setSaveState('saving', 'Unsaved');
           vscode.postMessage(next);
-          if (saveStateTimer) {
-            clearTimeout(saveStateTimer);
-          }
-          saveStateTimer = setTimeout(() => setSaveState('saved', 'Saved'), 180);
         };
-        const schedule = () => {
-          if (debounceTimer) {
-            clearTimeout(debounceTimer);
-          }
-          debounceTimer = setTimeout(flush, 700);
-        };
-
-        card.addEventListener('input', () => {
-          markEditing();
-          schedule();
-        });
-        card.addEventListener('change', () => {
-          markEditing();
-          schedule();
-        });
+        card.addEventListener('input', flush);
+        card.addEventListener('change', flush);
         card.addEventListener('click', (event) => {
-          const target = event.target;
-          if (target && target.closest && target.closest('button')) {
-            markEditing();
-            schedule();
+          const button = event.target && event.target.closest ? event.target.closest('button') : null;
+          if (!button || button.matches('[data-role="save"], [data-role="openRaw"]')) {
+            return;
           }
+          flush();
         });
       }
       function createChipEditor(root, initialValues, options = {}) {
         let values = [...(initialValues || [])];
         const chips = root.querySelector('[data-role="chips"]');
         const input = root.querySelector('[data-role="chipInput"]');
+        const notifyChanged = () => root.dispatchEvent(new Event('change', { bubbles: true }));
         const onChipClick = options.onChipClick || null;
         const removable = options.removable !== false;
         const readOnly = options.readOnly === true;
@@ -792,6 +758,7 @@ export function managerHtml(): string {
               el.querySelector('[data-role="remove"]').addEventListener('click', () => {
                 values = values.filter((v) => v !== value);
                 render();
+                notifyChanged();
               });
             }
             chips.appendChild(el);
@@ -808,9 +775,14 @@ export function managerHtml(): string {
           const raw = input.value.trim();
           if (!raw) return;
           const next = raw.split(',').map((v) => v.trim()).filter((v) => v.length > 0);
-          values = Array.from(new Set(values.concat(next)));
+          const updatedValues = Array.from(new Set(values.concat(next)));
+          const changed = updatedValues.length !== values.length;
+          values = updatedValues;
           input.value = '';
           render();
+          if (changed) {
+            notifyChanged();
+          }
           if (keepFocus) {
             input.focus();
           }
@@ -850,7 +822,7 @@ export function managerHtml(): string {
         return {
           values: () =>
             Array.from(list.querySelectorAll('[data-role="value"]'))
-              .map((el) => el.value.trim())
+              .map((el) => el.value)
               .filter((v) => v.length > 0)
         };
       }
@@ -894,7 +866,7 @@ export function managerHtml(): string {
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML =
-          '<div class="head"><div><strong>' + suite.id + '</strong> <span class="muted">' + suite.path + '</span></div><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div>' +
+          '<div class="head"><div><strong>' + suite.id + '</strong> <span class="muted">' + suite.path + '</span></div><div class="headActions"><button class="iconBtn" data-role="save" title="Save" aria-label="Save">' + saveIcon() + '</button><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div></div>' +
           '<div class="muted" style="margin-top:6px;">Root / ' + esc(suite.id) + '</div>' +
           '<div class="overviewRows">' +
             '<div class="overviewRow">' +
@@ -921,9 +893,13 @@ export function managerHtml(): string {
           suite.id
         );
         const remarksEditor = createTextListEditor(card.querySelector('[data-role="suiteRemarksEditor"]'), suite.remarks || [], 'Add Remark', { multiline: true });
+        card.querySelector('[data-role="save"]').addEventListener('click', () => {
+          setSaveState('saving', 'Saving...');
+          vscode.postMessage({ type: 'save' });
+        });
         card.querySelector('[data-role="openRaw"]').addEventListener('click', () => vscode.postMessage({ type: 'openRaw', path: suite.path }));
-        bindAutoPersist(card, () => ({
-            type: 'saveSuite',
+        bindDocumentDraft(card, () => ({
+            type: 'editSuite',
             path: suite.path,
             id: suite.id,
             title: card.querySelector('[data-role="title"]').value,
@@ -1305,7 +1281,7 @@ export function managerHtml(): string {
         for (const v of values || []) add(v);
         return {
           add,
-          values: () => Array.from(listEl.querySelectorAll('[data-role="value"]')).map((el) => el.value.trim()).filter((v) => v.length > 0)
+          values: () => Array.from(listEl.querySelectorAll('[data-role="value"]')).map((el) => el.value).filter((v) => v.length > 0)
         };
       }
       function createTestsEditor(root, tests) {
@@ -1342,7 +1318,7 @@ export function managerHtml(): string {
         return {
           add,
           values: () => Array.from(list.querySelectorAll('[data-role="test-item"]')).map((row) => ({
-            name: row.querySelector('[data-key="name"]').value.trim(),
+            name: row.querySelector('[data-key="name"]').value,
             expected: row.querySelector('[data-key="expected"]').value,
             actual: row.querySelector('[data-key="actual"]').value,
             trails: row.trailsEditor.values(),
@@ -1394,7 +1370,7 @@ export function managerHtml(): string {
         return {
           add,
           values: () => Array.from(list.querySelectorAll('[data-role="issue-item"]')).map((row) => ({
-            incident: row.querySelector('[data-key="incident"]').value.trim(),
+            incident: row.querySelector('[data-key="incident"]').value,
             owners: row.ownersEditor.getValues(),
             causes: row.causesEditor.values(),
             solutions: row.solutionsEditor.values(),
@@ -1414,7 +1390,7 @@ export function managerHtml(): string {
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML =
-          '<div class="head"><div><strong>' + testCase.id + '</strong> <span class="muted">' + testCase.path + '</span></div><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div>' +
+          '<div class="head"><div><strong>' + testCase.id + '</strong> <span class="muted">' + testCase.path + '</span></div><div class="headActions"><button class="iconBtn" data-role="save" title="Save" aria-label="Save">' + saveIcon() + '</button><button class="iconBtn" data-role="openRaw" title="Open YAML" aria-label="Open YAML">' + fileIcon() + '</button></div></div>' +
           '<div class="muted" style="margin-top:6px;">Root / ' + esc(testCase.suiteId || '-') + ' / ' + esc(testCase.id) + '</div>' +
           '<div class="overviewRows">' +
             '<div class="overviewRow">' +
@@ -1474,11 +1450,15 @@ export function managerHtml(): string {
             completedDayEl.value = todayDate();
           }
         });
+        card.querySelector('[data-role="save"]').addEventListener('click', () => {
+          setSaveState('saving', 'Saving...');
+          vscode.postMessage({ type: 'save' });
+        });
         card.querySelector('[data-role="openRaw"]').addEventListener('click', () => vscode.postMessage({ type: 'openRaw', path: testCase.path }));
-        bindAutoPersist(card, () => {
+        bindDocumentDraft(card, () => {
             const derived = deriveCaseDraftFields();
             return {
-            type: 'saveCase',
+            type: 'editCase',
             path: testCase.path,
             id: testCase.id,
             title: card.querySelector('[data-role="title"]').value,
@@ -1495,7 +1475,7 @@ export function managerHtml(): string {
             issues: issuesEditor.values()
             };
           }, () => ({
-            type: 'saveCase',
+            type: 'editCase',
             path: testCase.path,
             id: testCase.id,
             title: card.querySelector('[data-role="title"]').value,
@@ -1582,21 +1562,18 @@ export function managerHtml(): string {
       window.addEventListener('message', (event) => {
         const msg = event.data;
         if (msg.type === 'snapshot') {
-          const currentPath = snapshot.selectedCase?.path || snapshot.selectedSuite?.path || '';
-          const nextPath = msg.payload.selectedCase?.path || msg.payload.selectedSuite?.path || '';
-          const selectionChanged = currentPath !== nextPath;
-          if (!selectionChanged && Date.now() < suppressSnapshotUntil) {
-            pendingSnapshot = msg.payload;
-            schedulePendingSnapshotApply();
-            return;
-          }
-          pendingSnapshot = null;
-          if (pendingSnapshotTimer) {
-            clearTimeout(pendingSnapshotTimer);
-            pendingSnapshotTimer = null;
-          }
           snapshot = msg.payload;
           render();
+          setSaveState(snapshot.dirty ? 'saving' : '', snapshot.dirty ? 'Unsaved' : '');
+        }
+        if (msg.type === 'saving') {
+          setSaveState('saving', 'Saving...');
+        }
+        if (msg.type === 'dirty') {
+          setSaveState('saving', 'Unsaved');
+        }
+        if (msg.type === 'saved') {
+          setSaveState('saved', 'Saved');
         }
         if (msg.type === 'error') {
           setSaveState('error', 'Save failed');
@@ -1606,6 +1583,27 @@ export function managerHtml(): string {
           detailEl.prepend(errorEl);
         }
       });
+      window.addEventListener('keydown', (event) => {
+        if (!(event.ctrlKey || event.metaKey) || event.altKey) {
+          return;
+        }
+        const key = event.key.toLowerCase();
+        if (key === 's') {
+          event.preventDefault();
+          vscode.postMessage({ type: 'save' });
+          return;
+        }
+        if (key === 'z') {
+          event.preventDefault();
+          vscode.postMessage({ type: event.shiftKey ? 'redo' : 'undo' });
+          return;
+        }
+        if (key === 'y') {
+          event.preventDefault();
+          vscode.postMessage({ type: 'redo' });
+        }
+      });
+
       vscode.postMessage({ type: 'ready' });
     </script>
   </body>

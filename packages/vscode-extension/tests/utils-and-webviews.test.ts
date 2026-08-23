@@ -184,6 +184,16 @@ describe("webviews html", () => {
     expect(() => new Function(script!)).not.toThrow();
     expect(html).toContain("Case Editor");
     expect(html).toContain("saveState");
+    expect(html).toContain("bindDocumentDraft");
+    expect(html).toContain(".map((el) => el.value)");
+    expect(html).not.toContain(".map((el) => el.value.trim())");
+    expect(html).toContain("root.dispatchEvent(new Event('change', { bubbles: true }))");
+    expect(html).not.toContain("bindAutoPersist");
+    expect(html).toContain("data-role=\"save\"");
+    expect(html).toContain("type: 'editSuite'");
+    expect(html).toContain("type: 'editCase'");
+    expect(html).toContain("event.key.toLowerCase()");
+    expect(html).toContain("event.shiftKey ? 'redo' : 'undo'");
     expect(html).toContain("chartTooltip");
     expect(html).toContain("deriveCaseDraftFields");
     expect(html).toContain("allTestsPass");

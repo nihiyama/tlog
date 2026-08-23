@@ -18,6 +18,7 @@ class EventEmitter {
 }
 
 class TreeItem {
+  public id?: string;
   public description?: string;
   public tooltip?: string;
   public contextValue?: string;
@@ -245,6 +246,7 @@ describe("TlogTreeDataProvider", () => {
     });
     expect(suiteItem.command?.command).toBe("tlog.openManager");
     expect(suiteItem.collapsibleState).toBe(1);
+    expect(suiteItem.id).toBe("suite:/tmp/tests/index.yaml");
 
     const caseItem = provider.getTreeItem({
       id: "case-a",
@@ -256,6 +258,7 @@ describe("TlogTreeDataProvider", () => {
     });
     expect(caseItem.command?.command).toBe("tlog.openManager");
     expect(caseItem.collapsibleState).toBe(0);
+    expect(caseItem.id).toBe("case:/tmp/tests/case-a.yaml");
 
     const createNewItem = provider.getTreeItem({
       id: "guide-create-new",
@@ -264,6 +267,7 @@ describe("TlogTreeDataProvider", () => {
       path: "/tmp/tests"
     });
     expect(createNewItem.command?.command).toBe("tlog.createSuite");
+    expect(createNewItem.id).toBe("guide:guide-create-new");
   });
 
   it("assigns case and suite icons for every display status", () => {

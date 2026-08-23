@@ -13,3 +13,8 @@
   - Include ancestor Suite tags in Case searches without leaking inherited tags into editable Case data.
   - Exclude Cases beneath an ancestor Suite with `scoped: false`, and show an explicit no-target state when no scoped Cases match.
   - Apply the same recursive scope, active filters, and real completion dates to the Suite statistics command.
+
+- **TLog Manager explicit save**
+  - Replace debounce-based auto-save with a VS Code Custom Text Editor.
+  - Support explicit save, configured Auto Save, native dirty and close protection, and standard undo/redo.
+  - Open one YAML file per TLog Manager tab.
