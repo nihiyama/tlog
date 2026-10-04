@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+### Patch Changes
+
+- 2efda5a: Recalculate suite status icons and colors from displayed descendant cases after applying Controls filters in the Suites pane.
+- f3896d8: Reduce suite loading latency by reusing one workspace traversal and parsed YAML model for tree filtering, Manager initialization, and statistics. Bound concurrent I/O, coalesce overlapping refreshes, release shared models after use, and reject stale results while preserving filtered suite status icons and existing editing behavior.
+
 ## 0.4.0
 
 ### Minor Changes
