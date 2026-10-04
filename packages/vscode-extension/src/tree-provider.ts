@@ -2,7 +2,7 @@ import type { SearchFilters } from "@tlog/shared";
 import type * as vscode from "vscode";
 import type { TreeNodeModel } from "./tlog-workspace.js";
 import { identityTranslate, type Translate } from "./localization.js";
-import { getWorkspaceSnapshot, loadTree } from "./tlog-workspace.js";
+import { assignSuiteStatuses, getWorkspaceSnapshot, loadTree } from "./tlog-workspace.js";
 import { matchCaseWithFilters, normalizeTreeFilters, type TreeFilters } from "./filters.js";
 
 function pruneEmptySuites(nodes: TreeNodeModel[]): TreeNodeModel[] {
@@ -124,6 +124,7 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
 
         nodes = nodes.filter((node) => node.type !== "case" || allowedCasePaths.has(node.path));
         nodes = pruneEmptySuites(nodes);
+        assignSuiteStatuses(nodes);
       }
 
       this.nodes = nodes;

@@ -7,7 +7,8 @@ const { loadTreeMock, getWorkspaceSnapshotMock } = vi.hoisted(() => ({
   getWorkspaceSnapshotMock: vi.fn()
 }));
 
-vi.mock("../src/tlog-workspace.js", () => ({
+vi.mock("../src/tlog-workspace.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/tlog-workspace.js")>(),
   loadTree: loadTreeMock,
   getWorkspaceSnapshot: getWorkspaceSnapshotMock
 }));

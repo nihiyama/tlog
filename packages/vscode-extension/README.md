@@ -63,7 +63,7 @@ Tree behavior highlights:
 
 - Suite nodes are discovered from `index.yaml` and `*.suite.yaml`.
 - Case nodes are discovered from sibling `*.yaml` files.
-- Case and suite icons are color-coded by execution status, with suite colors derived from aggregated case status.
+- Case and suite icons are color-coded by execution status. Suite colors aggregate the displayed descendant cases, including cases in nested suites, and update when Controls filters change or clear.
 - Clicking a suite/case opens `TLog Manager` for that entity.
 
 ### 2) Powerful Filtering
@@ -83,6 +83,7 @@ Filter UX details:
 - Active filters are shown as chips and removable individually.
 - `Clear all filters` resets everything to defaults.
 - Case tag matching includes tags inherited from ancestor suites without copying those tags into editable case data.
+- While filters are active, suite branches with no matching cases are hidden. With no filters, all cases contribute to suite status and empty suites retain the default icon.
 
 ### 3) TLog Manager (Custom Text Editor)
 
