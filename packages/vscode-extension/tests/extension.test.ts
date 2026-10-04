@@ -1,5 +1,14 @@
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import {
+  buildDefaultCase,
+  buildDefaultSuite,
+  stringifyYaml,
+  writeYamlFileAtomic
+} from "@tlog/shared";
+import * as workspace from "../src/tlog-workspace.js";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +27,7 @@ const registerCompletionItemProvider = vi.fn(() => ({ dispose: vi.fn() }));
 const registerDefinitionProvider = vi.fn(() => ({ dispose: vi.fn() }));
 const eventDisposable = { dispose: vi.fn() };
 const onDidChangeTextDocument = vi.fn(() => eventDisposable);
+const onDidSaveTextDocument = vi.fn(() => eventDisposable);
 const createFileSystemWatcher = vi.fn(() => ({
   onDidCreate: vi.fn(() => eventDisposable),
   onDidChange: vi.fn(() => eventDisposable),
@@ -65,7 +75,7 @@ vi.mock(
       applyEdit: vi.fn(async () => true),
       onDidOpenTextDocument: vi.fn(() => eventDisposable),
       onDidChangeTextDocument,
-      onDidSaveTextDocument: vi.fn(() => eventDisposable),
+      onDidSaveTextDocument,
       onDidCloseTextDocument: vi.fn(() => eventDisposable),
       getConfiguration: vi.fn(() => ({ get: vi.fn(() => "recursive") })),
       getWorkspaceFolder: vi.fn()
@@ -146,6 +156,7 @@ describe("extension lifecycle", () => {
     createOutputChannel.mockClear();
     createFileSystemWatcher.mockClear();
     onDidChangeTextDocument.mockClear();
+    onDidSaveTextDocument.mockClear();
   });
 
   it("registers main commands and tree view", async () => {
@@ -253,6 +264,279 @@ describe("extension lifecycle", () => {
       -1
     );
   });
+
+  it("loads once after ready, preserving unsaved suite text and filtered cases", async () => {
+    const root = await mkdtemp(join(tmpdir(), "tlog-manager-load-"));
+    const suite = buildDefaultSuite({ id: "suite", title: "Disk title", tags: ["inherited"] });
+    await writeYamlFileAtomic(join(root, "index.yaml"), suite);
+    await writeYamlFileAtomic(
+      join(root, "done.yaml"),
+      buildDefaultCase({ id: "done", title: "Done", status: "done" })
+    );
+    await writeYamlFileAtomic(
+      join(root, "todo.yaml"),
+      buildDefaultCase({ id: "todo", title: "Todo", status: "todo" })
+    );
+    const filters = { tags: ["inherited"], testcaseStatus: ["done"] };
+    const context = {
+      subscriptions: [],
+      extensionUri: { fsPath: "/extension" },
+      workspaceState: {
+        get: (key: string) => (key === "tlog.rootDirectory" ? root : filters),
+        update: async () => {}
+      }
+    } as unknown as Parameters<typeof activate>[0];
+    await activate(context);
+    const editor = registerCustomEditorProvider.mock.calls.at(-1)?.[1] as {
+      resolveCustomTextEditor(document: unknown, panel: unknown): Promise<void>;
+    };
+    let receive!: (message: { type: string }) => void;
+    const postMessage = vi.fn(async () => true);
+    const panel = {
+      webview: {
+        options: {},
+        html: "",
+        postMessage,
+        onDidReceiveMessage: (listener: typeof receive) => {
+          receive = listener;
+        }
+      },
+      onDidDispose: vi.fn()
+    };
+    const document = {
+      uri: { fsPath: join(root, "index.yaml") },
+      version: 1,
+      isDirty: true,
+      getText: () => stringifyYaml({ ...suite, title: "Unsaved title" })
+    };
+    const load = vi.spyOn(workspace, "withWorkspaceModel");
+    await editor.resolveCustomTextEditor(document, panel);
+    expect(load).not.toHaveBeenCalled();
+    for (let index = 0; index < 10; index++) receive({ type: "ready" });
+    await vi.waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "snapshot",
+          payload: expect.objectContaining({
+            selectedSuite: expect.objectContaining({ title: "Unsaved title" }),
+            suiteCases: [expect.objectContaining({ id: "done" })],
+            cases: [expect.objectContaining({ id: "done" })],
+            relatedOptions: expect.arrayContaining([expect.objectContaining({ id: "todo" })]),
+            dirty: true
+          })
+        })
+      )
+    );
+    expect(load).toHaveBeenCalledTimes(1);
+    load.mockRestore();
+  });
+
+  it("does not acquire a full model before ready or after disposal", async () => {
+    const context = {
+      subscriptions: [],
+      extensionUri: { fsPath: "/extension" },
+      workspaceState: { get: vi.fn(), update: async () => {} }
+    } as unknown as Parameters<typeof activate>[0];
+    await activate(context);
+    const editor = registerCustomEditorProvider.mock.calls.at(-1)?.[1] as {
+      resolveCustomTextEditor(document: unknown, panel: unknown): Promise<void>;
+    };
+    let receive!: (message: { type: string }) => void;
+    let dispose!: () => void;
+    const postMessage = vi.fn(async () => true);
+    const panel = {
+      webview: {
+        options: {},
+        html: "",
+        postMessage,
+        onDidReceiveMessage: (listener: typeof receive) => {
+          receive = listener;
+        }
+      },
+      onDidDispose: (listener: typeof dispose) => {
+        dispose = listener;
+      }
+    };
+    const load = vi.spyOn(workspace, "withWorkspaceModel");
+    await editor.resolveCustomTextEditor({ uri: { fsPath: "/tests/index.yaml" } }, panel);
+    dispose();
+    receive({ type: "ready" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(load).not.toHaveBeenCalled();
+    expect(postMessage).not.toHaveBeenCalled();
+    load.mockRestore();
+  });
+
+  it.each(["success", "failure"] as const)(
+    "retries a stale Manager %s after the document and filters change",
+    async (outcome) => {
+      const root = await mkdtemp(join(tmpdir(), "tlog-manager-stale-"));
+      const suite = buildDefaultSuite({ id: "suite", title: "Disk title" });
+      await writeYamlFileAtomic(join(root, "index.yaml"), suite);
+      for (const status of ["todo", "done"] as const) {
+        await writeYamlFileAtomic(
+          join(root, `${status}.yaml`),
+          buildDefaultCase({ id: status, title: status, status })
+        );
+      }
+      let filters = { testcaseStatus: ["todo"] };
+      const context = {
+        subscriptions: [],
+        extensionUri: { fsPath: "/extension" },
+        workspaceState: {
+          get: (key: string) => (key === "tlog.rootDirectory" ? root : filters),
+          update: async () => {}
+        }
+      } as unknown as Parameters<typeof activate>[0];
+      await activate(context);
+      const editor = registerCustomEditorProvider.mock.calls.at(-1)?.[1] as {
+        resolveCustomTextEditor(document: unknown, panel: unknown): Promise<void>;
+      };
+      let receive!: (message: { type: string }) => void;
+      let dispose!: () => void;
+      const postMessage = vi.fn(async () => true);
+      const panel = {
+        webview: {
+          options: {},
+          html: "",
+          postMessage,
+          onDidReceiveMessage: (listener: typeof receive) => {
+            receive = listener;
+          }
+        },
+        onDidDispose: (listener: typeof dispose) => {
+          dispose = listener;
+        }
+      };
+      const document = {
+        uri: { fsPath: join(root, "index.yaml") },
+        version: 1,
+        isDirty: true,
+        getText: () => stringifyYaml({ ...suite, title: `Version ${document.version}` })
+      };
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const original = workspace.withWorkspaceModel;
+      const load = vi.spyOn(workspace, "withWorkspaceModel");
+      load.mockImplementationOnce(async (root, consume, signal) => {
+        await gate;
+        if (outcome === "failure") throw new Error("superseded failure");
+        return original(root, consume, signal);
+      });
+      try {
+        await editor.resolveCustomTextEditor(document, panel);
+        receive({ type: "ready" });
+        await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+        document.version = 2;
+        filters = { testcaseStatus: ["done"] };
+        release();
+        await vi.waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
+        expect(postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "snapshot",
+            payload: expect.objectContaining({
+              selectedSuite: expect.objectContaining({ title: "Version 2" }),
+              cases: [expect.objectContaining({ id: "done" })]
+            })
+          })
+        );
+        expect(load).toHaveBeenCalledTimes(2);
+      } finally {
+        release();
+        dispose();
+        load.mockRestore();
+        for (const subscription of context.subscriptions) subscription.dispose();
+      }
+    }
+  );
+
+  it("opens and disposes a 2000-case Manager 20 times without accumulating sessions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "tlog-manager-cycles-"));
+    const suite = buildDefaultSuite({ id: "suite", title: "Cycles" });
+    await writeYamlFileAtomic(join(root, "index.yaml"), suite);
+    for (let index = 0; index < 2000; index++) {
+      await writeYamlFileAtomic(
+        join(root, `case-${index}.yaml`),
+        buildDefaultCase({ id: `case-${index}`, title: "Case", status: "todo" })
+      );
+    }
+    const context = {
+      subscriptions: [],
+      extensionUri: { fsPath: "/extension" },
+      workspaceState: {
+        get: (key: string) => (key === "tlog.rootDirectory" ? root : undefined),
+        update: async () => {}
+      }
+    } as unknown as Parameters<typeof activate>[0];
+    await activate(context);
+    const editor = registerCustomEditorProvider.mock.calls.at(-1)?.[1] as {
+      resolveCustomTextEditor(document: unknown, panel: unknown): Promise<void>;
+    };
+    const document = {
+      uri: { fsPath: join(root, "index.yaml") },
+      version: 1,
+      isDirty: false,
+      getText: () => stringifyYaml(suite),
+      save: vi.fn(async () => true)
+    };
+    const subscriptions = context.subscriptions.length;
+    const load = vi.spyOn(workspace, "withWorkspaceModel");
+    const sync = vi.spyOn(workspace, "syncReciprocalRelated");
+    try {
+      for (let cycle = 0; cycle < 20; cycle++) {
+        let receive!: (message: { type: string }) => void;
+        let dispose!: () => void;
+        const postMessage = vi.fn(async () => true);
+        const panel = {
+          webview: {
+            options: {},
+            html: "",
+            postMessage,
+            onDidReceiveMessage: (listener: typeof receive) => {
+              receive = listener;
+            }
+          },
+          onDidDispose: (listener: typeof dispose) => {
+            dispose = listener;
+          }
+        };
+        await editor.resolveCustomTextEditor(document, panel);
+        for (let burst = 0; burst < 10; burst++) receive({ type: "ready" });
+        await vi.waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1), { timeout: 10000 });
+        const message = postMessage.mock.calls[0][0] as unknown as {
+          type: string;
+          payload: { cases: unknown[]; suiteCases: unknown[] };
+        };
+        expect(message.type).toBe("snapshot");
+        expect(message.payload.cases).toHaveLength(2000);
+        expect(message.payload.suiteCases).toHaveLength(2000);
+        dispose();
+        receive({ type: "ready" });
+        receive({ type: "save" });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(document.save).not.toHaveBeenCalled();
+        expect(load).toHaveBeenCalledTimes(cycle + 1);
+        expect(context.subscriptions).toHaveLength(subscriptions);
+        postMessage.mockClear(); // The test itself must not keep prior large payloads alive.
+      }
+      const saveListener = onDidSaveTextDocument.mock.calls[0]?.[0] as
+        | ((document: unknown) => void)
+        | undefined;
+      expect(saveListener).toBeTypeOf("function");
+      saveListener?.(document as unknown as import("vscode").TextDocument);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(load).toHaveBeenCalledTimes(20);
+      expect(sync).not.toHaveBeenCalled();
+      // Removed sessions do not run reciprocal sync or refresh after a document save.
+    } finally {
+      load.mockRestore();
+      sync.mockRestore();
+      for (const subscription of context.subscriptions) subscription.dispose();
+    }
+  }, 30000);
 
   it("reads package manifest contributions for suites toolbar actions", () => {
     const testDir = dirname(fileURLToPath(import.meta.url));

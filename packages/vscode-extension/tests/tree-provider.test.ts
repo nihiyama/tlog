@@ -7,9 +7,14 @@ const { loadTreeMock, getWorkspaceSnapshotMock } = vi.hoisted(() => ({
   getWorkspaceSnapshotMock: vi.fn()
 }));
 
-vi.mock("../src/tlog-workspace.js", () => ({
+vi.mock("../src/tlog-workspace.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/tlog-workspace.js")>()),
   loadTree: loadTreeMock,
-  getWorkspaceSnapshot: getWorkspaceSnapshotMock
+  getWorkspaceSnapshot: getWorkspaceSnapshotMock,
+  loadTreeData: async (root: string, t: unknown, filters?: unknown) => ({
+    nodes: await loadTreeMock(root, t),
+    snapshot: filters === undefined ? undefined : await getWorkspaceSnapshotMock(root, filters)
+  })
 }));
 
 class EventEmitter {
@@ -40,7 +45,9 @@ function createProviderContext() {
     TreeItem,
     TreeItemCollapsibleState: { None: 0, Collapsed: 1 },
     Uri: {
-      joinPath: (...parts: Array<{ fsPath?: string } | string>) => ({ fsPath: parts.map((p) => (typeof p === "string" ? p : p.fsPath ?? "")).join("/") })
+      joinPath: (...parts: Array<{ fsPath?: string } | string>) => ({
+        fsPath: parts.map((p) => (typeof p === "string" ? p : (p.fsPath ?? ""))).join("/")
+      })
     }
   };
   const context = {
@@ -63,7 +70,12 @@ describe("TlogTreeDataProvider", () => {
 
   it("shows guide when root is not set", async () => {
     const { vscodeApi, context } = createProviderContext();
-    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+    const provider = new TlogTreeDataProvider(
+      vscodeApi as never,
+      context as never,
+      "root",
+      "filters"
+    );
     await provider.refresh();
     const nodes = provider.getNodes();
     expect(nodes).toHaveLength(1);
@@ -75,15 +87,36 @@ describe("TlogTreeDataProvider", () => {
     workspaceState.get.mockImplementation((key: string) => {
       if (key === "root") return "/tmp/tests";
       if (key === "filters") {
-        return { tags: [], owners: ["qa"], testcaseStatus: [], issueHas: [], issueStatus: [], scopedOnly: false };
+        return {
+          tags: [],
+          owners: ["qa"],
+          testcaseStatus: [],
+          issueHas: [],
+          issueStatus: [],
+          scopedOnly: false
+        };
       }
       return undefined;
     });
 
     loadTreeMock.mockResolvedValue([
       { id: "suite-a", label: "suite-a: A", type: "suite", path: "/tmp/tests/index.yaml" },
-      { id: "case-a", label: "case-a: A", type: "case", path: "/tmp/tests/case-a.yaml", parentPath: "/tmp/tests/index.yaml", status: "todo" },
-      { id: "case-b", label: "case-b: B", type: "case", path: "/tmp/tests/case-b.yaml", parentPath: "/tmp/tests/index.yaml", status: "done" }
+      {
+        id: "case-a",
+        label: "case-a: A",
+        type: "case",
+        path: "/tmp/tests/case-a.yaml",
+        parentPath: "/tmp/tests/index.yaml",
+        status: "todo"
+      },
+      {
+        id: "case-b",
+        label: "case-b: B",
+        type: "case",
+        path: "/tmp/tests/case-b.yaml",
+        parentPath: "/tmp/tests/index.yaml",
+        status: "done"
+      }
     ]);
     getWorkspaceSnapshotMock.mockResolvedValue({
       cases: [
@@ -99,7 +132,12 @@ describe("TlogTreeDataProvider", () => {
       ]
     });
 
-    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+    const provider = new TlogTreeDataProvider(
+      vscodeApi as never,
+      context as never,
+      "root",
+      "filters"
+    );
     await provider.refresh();
     const nodes = provider.getNodes();
     expect(nodes.some((n) => n.type === "case" && n.id === "case-a")).toBe(false);
@@ -111,17 +149,44 @@ describe("TlogTreeDataProvider", () => {
     workspaceState.get.mockImplementation((key: string) => {
       if (key === "root") return "/tmp/tests";
       if (key === "filters") {
-        return { tags: ["smoke"], owners: [], testcaseStatus: [], issueHas: [], issueStatus: [], scopedOnly: false };
+        return {
+          tags: ["smoke"],
+          owners: [],
+          testcaseStatus: [],
+          issueHas: [],
+          issueStatus: [],
+          scopedOnly: false
+        };
       }
       return undefined;
     });
 
     loadTreeMock.mockResolvedValue([
       { id: "suite-a", label: "suite-a: A", type: "suite", path: "/tmp/tests/a/index.yaml" },
-      { id: "suite-a-1", label: "suite-a-1: A1", type: "suite", path: "/tmp/tests/a/a1/index.yaml", parentPath: "/tmp/tests/a/index.yaml" },
+      {
+        id: "suite-a-1",
+        label: "suite-a-1: A1",
+        type: "suite",
+        path: "/tmp/tests/a/a1/index.yaml",
+        parentPath: "/tmp/tests/a/index.yaml"
+      },
       { id: "suite-b", label: "suite-b: B", type: "suite", path: "/tmp/tests/b/index.yaml" },
-      { id: "case-a-1", label: "case-a-1", type: "case", path: "/tmp/tests/a/a1/case-a-1.yaml", parentPath: "/tmp/tests/a/a1/index.yaml", status: "todo" },
-      { id: "case-b-1", label: "case-b-1", type: "case", path: "/tmp/tests/b/case-b-1.yaml", parentPath: "/tmp/tests/b/index.yaml", status: "todo" }
+      {
+        id: "case-a-1",
+        label: "case-a-1",
+        type: "case",
+        path: "/tmp/tests/a/a1/case-a-1.yaml",
+        parentPath: "/tmp/tests/a/a1/index.yaml",
+        status: "todo"
+      },
+      {
+        id: "case-b-1",
+        label: "case-b-1",
+        type: "case",
+        path: "/tmp/tests/b/case-b-1.yaml",
+        parentPath: "/tmp/tests/b/index.yaml",
+        status: "todo"
+      }
     ]);
     getWorkspaceSnapshotMock.mockResolvedValue({
       cases: [
@@ -138,13 +203,24 @@ describe("TlogTreeDataProvider", () => {
       ]
     });
 
-    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+    const provider = new TlogTreeDataProvider(
+      vscodeApi as never,
+      context as never,
+      "root",
+      "filters"
+    );
     await provider.refresh();
 
     const nodes = provider.getNodes();
-    expect(nodes.some((n) => n.type === "suite" && n.path === "/tmp/tests/a/index.yaml")).toBe(true);
-    expect(nodes.some((n) => n.type === "suite" && n.path === "/tmp/tests/a/a1/index.yaml")).toBe(true);
-    expect(nodes.some((n) => n.type === "suite" && n.path === "/tmp/tests/b/index.yaml")).toBe(false);
+    expect(nodes.some((n) => n.type === "suite" && n.path === "/tmp/tests/a/index.yaml")).toBe(
+      true
+    );
+    expect(nodes.some((n) => n.type === "suite" && n.path === "/tmp/tests/a/a1/index.yaml")).toBe(
+      true
+    );
+    expect(nodes.some((n) => n.type === "suite" && n.path === "/tmp/tests/b/index.yaml")).toBe(
+      false
+    );
   });
 
   it("applies filtering when only scopedOnly is enabled", async () => {
@@ -152,15 +228,36 @@ describe("TlogTreeDataProvider", () => {
     workspaceState.get.mockImplementation((key: string) => {
       if (key === "root") return "/tmp/tests";
       if (key === "filters") {
-        return { tags: [], owners: [], testcaseStatus: [], issueHas: [], issueStatus: [], scopedOnly: true };
+        return {
+          tags: [],
+          owners: [],
+          testcaseStatus: [],
+          issueHas: [],
+          issueStatus: [],
+          scopedOnly: true
+        };
       }
       return undefined;
     });
 
     loadTreeMock.mockResolvedValue([
       { id: "suite-a", label: "suite-a: A", type: "suite", path: "/tmp/tests/index.yaml" },
-      { id: "case-a", label: "case-a: A", type: "case", path: "/tmp/tests/case-a.yaml", parentPath: "/tmp/tests/index.yaml", status: "todo" },
-      { id: "case-b", label: "case-b: B", type: "case", path: "/tmp/tests/case-b.yaml", parentPath: "/tmp/tests/index.yaml", status: "done" }
+      {
+        id: "case-a",
+        label: "case-a: A",
+        type: "case",
+        path: "/tmp/tests/case-a.yaml",
+        parentPath: "/tmp/tests/index.yaml",
+        status: "todo"
+      },
+      {
+        id: "case-b",
+        label: "case-b: B",
+        type: "case",
+        path: "/tmp/tests/case-b.yaml",
+        parentPath: "/tmp/tests/index.yaml",
+        status: "done"
+      }
     ]);
     getWorkspaceSnapshotMock.mockResolvedValue({
       cases: [
@@ -185,7 +282,12 @@ describe("TlogTreeDataProvider", () => {
       ]
     });
 
-    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+    const provider = new TlogTreeDataProvider(
+      vscodeApi as never,
+      context as never,
+      "root",
+      "filters"
+    );
     await provider.refresh();
 
     const nodes = provider.getNodes();
@@ -199,7 +301,14 @@ describe("TlogTreeDataProvider", () => {
     workspaceState.get.mockImplementation((key: string) => {
       if (key === "root") return "/tmp/tests";
       if (key === "filters") {
-        return { tags: ["smoke"], owners: [], testcaseStatus: [], issueHas: [], issueStatus: [], scopedOnly: false };
+        return {
+          tags: ["smoke"],
+          owners: [],
+          testcaseStatus: [],
+          issueHas: [],
+          issueStatus: [],
+          scopedOnly: false
+        };
       }
       return undefined;
     });
@@ -207,8 +316,22 @@ describe("TlogTreeDataProvider", () => {
     loadTreeMock.mockResolvedValue([
       { id: "suite-a", label: "suite-a: A", type: "suite", path: "/tmp/tests/a/index.yaml" },
       { id: "suite-b", label: "suite-b: B", type: "suite", path: "/tmp/tests/b/index.yaml" },
-      { id: "case-dup", label: "case-dup: A", type: "case", path: "/tmp/tests/a/case-dup.yaml", parentPath: "/tmp/tests/a/index.yaml", status: "todo" },
-      { id: "case-dup", label: "case-dup: B", type: "case", path: "/tmp/tests/b/case-dup.yaml", parentPath: "/tmp/tests/b/index.yaml", status: "todo" }
+      {
+        id: "case-dup",
+        label: "case-dup: A",
+        type: "case",
+        path: "/tmp/tests/a/case-dup.yaml",
+        parentPath: "/tmp/tests/a/index.yaml",
+        status: "todo"
+      },
+      {
+        id: "case-dup",
+        label: "case-dup: B",
+        type: "case",
+        path: "/tmp/tests/b/case-dup.yaml",
+        parentPath: "/tmp/tests/b/index.yaml",
+        status: "todo"
+      }
     ]);
     getWorkspaceSnapshotMock.mockResolvedValue({
       cases: [
@@ -225,17 +348,31 @@ describe("TlogTreeDataProvider", () => {
       ]
     });
 
-    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+    const provider = new TlogTreeDataProvider(
+      vscodeApi as never,
+      context as never,
+      "root",
+      "filters"
+    );
     await provider.refresh();
 
     const nodes = provider.getNodes();
-    expect(nodes.some((n) => n.type === "case" && n.path === "/tmp/tests/a/case-dup.yaml")).toBe(true);
-    expect(nodes.some((n) => n.type === "case" && n.path === "/tmp/tests/b/case-dup.yaml")).toBe(false);
+    expect(nodes.some((n) => n.type === "case" && n.path === "/tmp/tests/a/case-dup.yaml")).toBe(
+      true
+    );
+    expect(nodes.some((n) => n.type === "case" && n.path === "/tmp/tests/b/case-dup.yaml")).toBe(
+      false
+    );
   });
 
   it("creates expected tree items and commands", () => {
     const { vscodeApi, context } = createProviderContext();
-    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+    const provider = new TlogTreeDataProvider(
+      vscodeApi as never,
+      context as never,
+      "root",
+      "filters"
+    );
 
     const suiteItem = provider.getTreeItem({
       id: "suite-a",
@@ -272,7 +409,12 @@ describe("TlogTreeDataProvider", () => {
 
   it("assigns case and suite icons for every display status", () => {
     const { vscodeApi, context } = createProviderContext();
-    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+    const provider = new TlogTreeDataProvider(
+      vscodeApi as never,
+      context as never,
+      "root",
+      "filters"
+    );
 
     for (const [status, expectedLight, expectedDark] of [
       ["todo", "status-todo.svg", "status-todo.svg"],
@@ -311,7 +453,8 @@ describe("TlogTreeDataProvider", () => {
   });
 
   it("keeps default colors and provides light and dark doing/done colors", () => {
-    const icon = (name: string) => readFileSync(new URL("../media/" + name, import.meta.url), "utf8");
+    const icon = (name: string) =>
+      readFileSync(new URL("../media/" + name, import.meta.url), "utf8");
 
     expect(icon("status-todo.svg")).toContain("#adadad");
     expect(icon("suite-not-all-done.svg")).toContain("#adadad");
@@ -329,16 +472,36 @@ describe("TlogTreeDataProvider", () => {
     const { vscodeApi, context, workspaceState } = createProviderContext();
     workspaceState.get.mockImplementation((key: string) => {
       if (key === "root") return "/tmp/tests";
-      if (key === "filters") return { tags: [], owners: [], testcaseStatus: [], issueHas: [], issueStatus: [], scopedOnly: false };
+      if (key === "filters")
+        return {
+          tags: [],
+          owners: [],
+          testcaseStatus: [],
+          issueHas: [],
+          issueStatus: [],
+          scopedOnly: false
+        };
       return undefined;
     });
     loadTreeMock.mockResolvedValue([
       { id: "suite-a", label: "suite-a: A", type: "suite", path: "/tmp/tests/index.yaml" },
-      { id: "case-a", label: "case-a: A", type: "case", path: "/tmp/tests/case-a.yaml", parentPath: "/tmp/tests/index.yaml", status: "todo" },
+      {
+        id: "case-a",
+        label: "case-a: A",
+        type: "case",
+        path: "/tmp/tests/case-a.yaml",
+        parentPath: "/tmp/tests/index.yaml",
+        status: "todo"
+      },
       { id: "guide-create-new", label: "Create New", type: "guide", path: "/tmp/tests" }
     ]);
 
-    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+    const provider = new TlogTreeDataProvider(
+      vscodeApi as never,
+      context as never,
+      "root",
+      "filters"
+    );
     await provider.refresh();
     const rootChildren = await provider.getChildren();
     expect(rootChildren.map((n) => n.id)).toEqual(["suite-a", "guide-create-new"]);
@@ -354,10 +517,52 @@ describe("TlogTreeDataProvider", () => {
 
   it("sets load error guide when loadTree fails", async () => {
     const { vscodeApi, context, workspaceState } = createProviderContext();
-    workspaceState.get.mockImplementation((key: string) => (key === "root" ? "/tmp/tests" : undefined));
+    workspaceState.get.mockImplementation((key: string) =>
+      key === "root" ? "/tmp/tests" : undefined
+    );
     loadTreeMock.mockRejectedValue(new Error("boom"));
-    const provider = new TlogTreeDataProvider(vscodeApi as never, context as never, "root", "filters");
+    const provider = new TlogTreeDataProvider(
+      vscodeApi as never,
+      context as never,
+      "root",
+      "filters"
+    );
     await provider.refresh();
     expect(provider.getNodes()[0]?.id).toBe("guide-load-error");
+  });
+
+  it("coalesces refresh bursts and rejects stale success and error after a root switch", async () => {
+    for (const fail of [false, true]) {
+      const { vscodeApi, context, workspaceState } = createProviderContext();
+      workspaceState.get.mockImplementation((key) => (key === "root" ? "/old" : undefined));
+      let resolve!: (nodes: unknown[]) => void;
+      let reject!: (error: unknown) => void;
+      loadTreeMock.mockReset();
+      loadTreeMock.mockImplementationOnce(
+        () =>
+          new Promise((yes, no) => {
+            resolve = yes;
+            reject = no;
+          })
+      );
+      loadTreeMock.mockResolvedValue([
+        { id: "new", label: "New", type: "suite", path: "/new/index.yaml" }
+      ]);
+      const provider = new TlogTreeDataProvider(
+        vscodeApi as never,
+        context as never,
+        "root",
+        "filters"
+      );
+      const first = provider.refresh();
+      const requests = Array.from({ length: 1000 }, () => provider.refresh());
+      const switched = provider.setRootDirectory("/new");
+      expect(loadTreeMock).toHaveBeenCalledTimes(1);
+      if (fail) reject(new Error("old failure"));
+      else resolve([{ id: "old", label: "Old", type: "suite", path: "/old/index.yaml" }]);
+      await Promise.all([first, switched, ...requests]);
+      expect(loadTreeMock).toHaveBeenCalledTimes(2);
+      expect(provider.getNodes().map((node) => node.id)).toEqual(["new"]);
+    }
   });
 });
