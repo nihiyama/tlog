@@ -9,6 +9,10 @@ import {
   createCase,
   createSuite,
   getWorkspaceSnapshot,
+  filterWorkspaceSnapshot,
+  snapshotFromWorkspaceModel,
+  withWorkspaceModel,
+  invalidateWorkspaceLoad,
   parseYamlDocument,
   resolveRelatedIds,
   syncReciprocalRelated
@@ -147,9 +151,15 @@ async function postSnapshot(
   rootDirectory: string | undefined,
   context: vscode.ExtensionContext,
   selection: { type: "suite" | "case"; path: string },
-  document?: vscode.TextDocument
+  document?: vscode.TextDocument,
+  options?: {
+    signal: AbortSignal;
+    isCurrent: () => boolean;
+    onRelated: (related: RelatedOption[]) => void;
+  }
 ): Promise<void> {
   if (!rootDirectory) {
+    if (options && !options.isCurrent()) return;
     await panel.webview.postMessage({
       type: "snapshot",
       payload: { root: "", suites: [], cases: [] }
@@ -157,104 +167,108 @@ async function postSnapshot(
     return;
   }
 
-  const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
+  const filters = structuredClone(
+    normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY))
+  );
   const searchFilters: SearchFilters = {};
   if (filters.tags.length > 0) {
     searchFilters.tags = filters.tags;
   }
 
-  const snapshot = await getWorkspaceSnapshot(rootDirectory, searchFilters);
-  const allSnapshot = await getWorkspaceSnapshot(rootDirectory);
-  const filteredCases = snapshot.cases.filter((item) => matchCaseWithFilters(item, filters));
-  const selectedSuiteCard =
-    selection?.type === "suite"
-      ? (allSnapshot.suites.find((suite) => suite.path === selection.path) ?? null)
-      : null;
-  const selectedCaseCard =
-    selection?.type === "case"
-      ? (allSnapshot.cases.find((item) => item.path === selection.path) ?? null)
-      : null;
-  const relatedOptions = buildRelatedOptions(allSnapshot);
-  const relatedRefById = relatedOptions.reduce<Record<string, string>>((acc, item) => {
-    if (!acc[item.id]) {
-      acc[item.id] = item.ref;
-    }
-    return acc;
-  }, {});
-  const selectedSuite =
-    selectedSuiteCard !== null
-      ? ({
-          ...parseYaml<Suite>(
-            document?.uri.fsPath === selectedSuiteCard.path
-              ? document.getText()
-              : await readFile(selectedSuiteCard.path, "utf8")
-          ),
-          path: selectedSuiteCard.path
-        } as Suite & { path: string })
-      : null;
-  const selectedCase =
-    selectedCaseCard !== null
-      ? ({
-          ...parseYaml<TestCase>(
-            document?.uri.fsPath === selectedCaseCard.path
-              ? document.getText()
-              : await readFile(selectedCaseCard.path, "utf8")
-          ),
-          path: selectedCaseCard.path,
-          suiteId: selectedCaseCard.suiteId,
-          suiteOwners: selectedCaseCard.suiteOwners,
-          suiteTags: selectedCaseCard.suiteTags
-        } as TestCase & {
-          path: string;
-          suiteId?: string;
-          suiteOwners: string[];
-          suiteTags: string[];
-        })
-      : null;
-  const filteredCasePaths = new Set(filteredCases.map((item) => item.path));
-  const suiteCases =
-    selection?.type === "suite" && selectedSuiteCard
-      ? await Promise.all(
-          allSnapshot.cases
-            .filter(
-              (item) =>
-                isPathInside(dirname(selectedSuiteCard.path), item.path) &&
-                filteredCasePaths.has(item.path) &&
-                item.scoped !== false &&
-                item.suiteScoped !== false
+  await withWorkspaceModel(
+    rootDirectory,
+    async (model, current) => {
+      const allSnapshot = snapshotFromWorkspaceModel(model);
+      const snapshot = filterWorkspaceSnapshot(allSnapshot, searchFilters);
+      const filteredCases = snapshot.cases.filter((item) => matchCaseWithFilters(item, filters));
+      const selectedSuiteCard =
+        selection?.type === "suite"
+          ? (allSnapshot.suites.find((suite) => suite.path === selection.path) ?? null)
+          : null;
+      const selectedCaseCard =
+        selection?.type === "case"
+          ? (allSnapshot.cases.find((item) => item.path === selection.path) ?? null)
+          : null;
+      const relatedOptions = buildRelatedOptions(allSnapshot);
+      const relatedRefById = relatedOptions.reduce<Record<string, string>>((acc, item) => {
+        if (!acc[item.id]) {
+          acc[item.id] = item.ref;
+        }
+        return acc;
+      }, {});
+      const selectedSuite =
+        selectedSuiteCard !== null
+          ? ({
+              ...(document?.uri.fsPath === selectedSuiteCard.path
+                ? parseYaml<Suite>(document.getText())
+                : model.getSuite(selectedSuiteCard.path)!),
+              path: selectedSuiteCard.path
+            } as Suite & { path: string })
+          : null;
+      const selectedCase =
+        selectedCaseCard !== null
+          ? ({
+              ...(document?.uri.fsPath === selectedCaseCard.path
+                ? parseYaml<TestCase>(document.getText())
+                : model.getCase(selectedCaseCard.path)!),
+              path: selectedCaseCard.path,
+              suiteId: selectedCaseCard.suiteId,
+              suiteOwners: selectedCaseCard.suiteOwners,
+              suiteTags: selectedCaseCard.suiteTags
+            } as TestCase & {
+              path: string;
+              suiteId?: string;
+              suiteOwners: string[];
+              suiteTags: string[];
+            })
+          : null;
+      const filteredCasePaths = new Set(filteredCases.map((item) => item.path));
+      const suiteCases =
+        selection?.type === "suite" && selectedSuiteCard
+          ? allSnapshot.cases
+              .filter(
+                (item) =>
+                  isPathInside(dirname(selectedSuiteCard.path), item.path) &&
+                  filteredCasePaths.has(item.path) &&
+                  item.scoped !== false &&
+                  item.suiteScoped !== false
+              )
+              .map((item) => ({
+                ...model.getCase(item.path)!,
+                path: item.path,
+                suiteId: item.suiteId
+              }))
+          : [];
+
+      const suiteBurndown =
+        selectedSuite !== null
+          ? calculateBurndown(
+              suiteCases,
+              selectedSuite.duration.scheduled.start,
+              selectedSuite.duration.scheduled.end
             )
-            .map(async (item) => ({
-              ...parseYaml<TestCase>(await readFile(item.path, "utf8")),
-              path: item.path,
-              suiteId: item.suiteId
-            }))
-        )
-      : [];
+          : null;
 
-  const suiteBurndown =
-    selectedSuite !== null
-      ? calculateBurndown(
+      if (!current() || (options && !options.isCurrent())) return;
+      options?.onRelated(relatedOptions);
+      await panel.webview.postMessage({
+        type: "snapshot",
+        payload: {
+          root: rootDirectory,
+          suites: snapshot.suites,
+          cases: filteredCases,
+          selectedSuite,
+          selectedCase,
           suiteCases,
-          selectedSuite.duration.scheduled.start,
-          selectedSuite.duration.scheduled.end
-        )
-      : null;
-
-  await panel.webview.postMessage({
-    type: "snapshot",
-    payload: {
-      root: rootDirectory,
-      suites: snapshot.suites,
-      cases: filteredCases,
-      selectedSuite,
-      selectedCase,
-      suiteCases,
-      suiteBurndown,
-      relatedOptions,
-      relatedRefById,
-      dirty: document?.isDirty ?? false
-    }
-  });
+          suiteBurndown,
+          relatedOptions,
+          relatedRefById,
+          dirty: document?.isDirty ?? false
+        }
+      });
+    },
+    options?.signal
+  );
 }
 
 async function postControlsState(
@@ -360,6 +374,9 @@ interface ManagerEditorSession {
   pendingOperations: Promise<void>;
   relatedOptions: RelatedOption[];
   rootDirectory: string | undefined;
+  lifetime: AbortController;
+  snapshotVersion: number;
+  pendingReady?: Promise<void>;
 }
 
 function managerDocumentType(path: string): "suite" | "case" {
@@ -374,14 +391,63 @@ function registerManagerCustomEditor(
   const t = createTranslate(vscodeApi);
   const language = vscodeApi.env?.language ?? "en";
   const sessions = new Set<ManagerEditorSession>();
+  const postManagerMessage = async (
+    session: ManagerEditorSession,
+    message: unknown
+  ): Promise<void> => {
+    if (!session.lifetime.signal.aborted) await session.panel.webview.postMessage(message);
+  };
 
   const postSessionSnapshot = async (session: ManagerEditorSession): Promise<void> => {
-    await postSnapshot(
-      session.panel,
-      session.rootDirectory,
-      context,
-      session.selection,
-      session.document
+    const request = ++session.snapshotVersion;
+    let version: number;
+    let filterVersion: string;
+    do {
+      if (session.lifetime.signal.aborted) return;
+      version = session.document.version;
+      filterVersion = JSON.stringify(
+        normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY))
+      );
+      try {
+        await postSnapshot(
+          session.panel,
+          session.rootDirectory,
+          context,
+          session.selection,
+          session.document,
+          {
+            signal: session.lifetime.signal,
+            isCurrent: () =>
+              !session.lifetime.signal.aborted &&
+              request === session.snapshotVersion &&
+              version === session.document.version &&
+              filterVersion ===
+                JSON.stringify(
+                  normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY))
+                ),
+            onRelated: (related) => {
+              session.relatedOptions = related;
+            }
+          }
+        );
+      } catch (error) {
+        if (session.lifetime.signal.aborted || request !== session.snapshotVersion) return;
+        if (
+          version === session.document.version &&
+          filterVersion ===
+            JSON.stringify(
+              normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY))
+            )
+        )
+          throw error;
+        // A document/filter change supersedes errors from the previous projection too.
+      }
+    } while (
+      !session.lifetime.signal.aborted &&
+      request === session.snapshotVersion &&
+      (version !== session.document.version ||
+        filterVersion !==
+          JSON.stringify(normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY))))
     );
   };
 
@@ -400,9 +466,6 @@ function registerManagerCustomEditor(
       {
         async resolveCustomTextEditor(document, panel) {
           const rootDirectory = provider.getRootDirectory();
-          const relatedOptions = rootDirectory
-            ? buildRelatedOptions(await getWorkspaceSnapshot(rootDirectory))
-            : [];
           const session: ManagerEditorSession = {
             document,
             panel,
@@ -411,8 +474,10 @@ function registerManagerCustomEditor(
               path: document.uri.fsPath
             },
             pendingOperations: Promise.resolve(),
-            relatedOptions,
-            rootDirectory
+            relatedOptions: [],
+            rootDirectory,
+            lifetime: new AbortController(),
+            snapshotVersion: 0
           };
           sessions.add(session);
           panel.iconPath = vscodeApi.Uri.joinPath(
@@ -421,25 +486,28 @@ function registerManagerCustomEditor(
             "manager-tab-icon.svg"
           );
           panel.webview.options = { enableScripts: true };
-          panel.webview.html = managerHtml(t, language);
           panel.onDidDispose(() => {
+            session.lifetime.abort();
+            session.relatedOptions = [];
             sessions.delete(session);
           });
 
           panel.webview.onDidReceiveMessage((message: ManagerMessage) => {
+            if (message.type === "ready" && session.pendingReady) return;
             session.pendingOperations = session.pendingOperations
               .then(async () => {
+                if (session.lifetime.signal.aborted) return;
                 if (message.type === "ready") {
                   await postSessionSnapshot(session);
                   return;
                 }
                 if (message.type === "save") {
-                  await panel.webview.postMessage({ type: "saving" });
+                  await postManagerMessage(session, { type: "saving" });
                   const saved = await document.save();
                   if (!saved) {
                     throw new Error(t("VS Code could not save the TLog document."));
                   }
-                  await panel.webview.postMessage({ type: "saved" });
+                  await postManagerMessage(session, { type: "saved" });
                   return;
                 }
                 if (message.type === "undo" || message.type === "redo") {
@@ -481,13 +549,24 @@ function registerManagerCustomEditor(
                   if (!applied) {
                     throw new Error(t("VS Code could not apply the TLog edit."));
                   }
-                  await panel.webview.postMessage({ type: "dirty" });
+                  await postManagerMessage(session, { type: "dirty" });
                 }
               })
               .catch(async (error) => {
-                await panel.webview.postMessage({ type: "error", message: String(error) });
+                if (session.lifetime.signal.aborted) return;
+                await postManagerMessage(session, { type: "error", message: String(error) });
               });
+            if (message.type === "ready") {
+              const pending = session.pendingOperations;
+              session.pendingReady = pending;
+              const clear = () => {
+                if (session.pendingReady === pending) session.pendingReady = undefined;
+              };
+              void pending.then(clear, clear);
+            }
           });
+          // Register handlers before the HTML can emit its ready event.
+          panel.webview.html = managerHtml(t, language);
         }
       },
       {
@@ -509,16 +588,18 @@ function registerManagerCustomEditor(
           const rootDirectory = documentSessions[0]?.rootDirectory;
           const source = getManagerDocumentRelated(document.getText(), document.uri.fsPath);
           if (rootDirectory) {
+            invalidateWorkspaceLoad(rootDirectory);
             await syncReciprocalRelated(rootDirectory, source.id, source.related);
+            invalidateWorkspaceLoad(rootDirectory);
           }
           await provider.refresh();
           await Promise.all(
-            documentSessions.map((session) => session.panel.webview.postMessage({ type: "saved" }))
+            documentSessions.map((session) => postManagerMessage(session, { type: "saved" }))
           );
         } catch (error) {
           await Promise.all(
             documentSessions.map((session) =>
-              session.panel.webview.postMessage({ type: "error", message: String(error) })
+              postManagerMessage(session, { type: "error", message: String(error) })
             )
           );
         }
@@ -533,6 +614,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const language = vscodeApi.env?.language ?? "en";
   await context.workspaceState.update(FILTER_KEY, defaultTreeFilters());
   const provider = new TlogTreeDataProvider(vscodeApi, context, ROOT_KEY, FILTER_KEY, t);
+  context.subscriptions.push(provider);
   registerManagerCustomEditor(vscodeApi, context, provider);
   const tree = vscodeApi.window.createTreeView("tlog.tree", { treeDataProvider: provider });
   context.subscriptions.push(tree);
@@ -584,6 +666,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!root || !isInsideRoot(root, uri.fsPath)) {
       return;
     }
+    invalidateWorkspaceLoad(root);
     void refreshAllViews();
   };
   context.subscriptions.push(yamlWatcher);
@@ -833,6 +916,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     vscodeApi.commands.registerCommand("tlog.refreshTree", async () => {
+      const root = provider.getRootDirectory();
+      if (root) invalidateWorkspaceLoad(root);
       await refreshAllViews();
     })
   );
@@ -850,24 +935,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
 
-      const suite = parseYaml<Suite>(await readFile(node.path, "utf8"));
-      const start = suite.duration?.scheduled?.start;
-      const end = suite.duration?.scheduled?.end;
-      if (!start || !end) {
-        vscodeApi.window.showWarningMessage(t("scheduled.start/end is missing"));
-        return;
-      }
+      await withWorkspaceModel(root, async (model, current) => {
+        const suite = model.getSuite(node.path)!;
+        const start = suite.duration?.scheduled?.start;
+        const end = suite.duration?.scheduled?.end;
+        if (!start || !end) {
+          vscodeApi.window.showWarningMessage(t("scheduled.start/end is missing"));
+          return;
+        }
 
-      const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
-      const searchFilters: SearchFilters = {};
-      if (filters.tags.length > 0) {
-        searchFilters.tags = filters.tags;
-      }
-      const snapshot = await getWorkspaceSnapshot(root, searchFilters);
-      const filteredCases = snapshot.cases.filter((item) => matchCaseWithFilters(item, filters));
-      const filteredCasePaths = new Set(filteredCases.map((item) => item.path));
-      const cases = await Promise.all(
-        snapshot.cases
+        const filters = normalizeTreeFilters(context.workspaceState.get<TreeFilters>(FILTER_KEY));
+        const searchFilters: SearchFilters = {};
+        if (filters.tags.length > 0) {
+          searchFilters.tags = filters.tags;
+        }
+        const snapshot = snapshotFromWorkspaceModel(model, searchFilters);
+        const filteredCases = snapshot.cases.filter((item) => matchCaseWithFilters(item, filters));
+        const filteredCasePaths = new Set(filteredCases.map((item) => item.path));
+        const cases = snapshot.cases
           .filter(
             (item) =>
               isPathInside(dirname(node.path), item.path) &&
@@ -875,18 +960,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               item.scoped !== false &&
               item.suiteScoped !== false
           )
-          .map(async (item) => parseYaml<TestCase>(await readFile(item.path, "utf8")))
-      );
+          .map((item) => model.getCase(item.path)!);
 
-      const stats = calculateBurndown(cases, start, end);
-      vscodeApi.window.showInformationMessage(
-        t(
-          "todo={0} doing={1} done={2}",
-          stats.summary.todo,
-          stats.summary.doing,
-          stats.summary.done
-        )
-      );
+        const stats = calculateBurndown(cases, start, end);
+        if (!current() || root !== provider.getRootDirectory()) return;
+        vscodeApi.window.showInformationMessage(
+          t(
+            "todo={0} doing={1} done={2}",
+            stats.summary.todo,
+            stats.summary.doing,
+            stats.summary.done
+          )
+        );
+      });
     })
   );
 

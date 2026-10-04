@@ -2,7 +2,7 @@ import type { SearchFilters } from "@tlog/shared";
 import type * as vscode from "vscode";
 import type { TreeNodeModel } from "./tlog-workspace.js";
 import { identityTranslate, type Translate } from "./localization.js";
-import { assignSuiteStatuses, getWorkspaceSnapshot, loadTree } from "./tlog-workspace.js";
+import { assignSuiteStatuses, loadTreeData } from "./tlog-workspace.js";
 import { matchCaseWithFilters, normalizeTreeFilters, type TreeFilters } from "./filters.js";
 
 function pruneEmptySuites(nodes: TreeNodeModel[]): TreeNodeModel[] {
@@ -33,6 +33,11 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
   private readonly emitter: vscode.EventEmitter<TreeNodeModel | undefined | void>;
   private nodes: TreeNodeModel[] = [];
   private rootDirectory?: string;
+  private refreshVersion = 0;
+  private pendingRefresh?: Promise<void>;
+  private readonly lifetime = new AbortController();
+  private readonly nodesByPath = new Map<string, TreeNodeModel>();
+  private readonly childrenByPath = new Map<string, TreeNodeModel[]>();
   private readonly iconPaths: Record<string, { light: vscode.Uri; dark: vscode.Uri }>;
 
   constructor(
@@ -81,65 +86,105 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
     await this.refresh();
   }
 
-  async refresh(): Promise<void> {
-    if (!this.rootDirectory) {
-      this.nodes = [
-        {
-          id: "guide-select-root",
-          label: this.t("Set Root from tree title action"),
-          type: "guide",
-          path: "",
-          description: this.t("Use Set Root button in TLog view")
-        }
-      ];
-      this.emitter.fire();
-      return;
+  refresh(): Promise<void> {
+    this.refreshVersion++;
+    if (!this.pendingRefresh) {
+      this.pendingRefresh = this.refreshLatest().finally(() => {
+        this.pendingRefresh = undefined;
+      });
     }
+    return this.pendingRefresh;
+  }
 
-    try {
-      let nodes = await loadTree(this.rootDirectory, this.t);
-      const filters = normalizeTreeFilters(
-        this.context.workspaceState.get<TreeFilters>(this.filterKey)
-      );
+  dispose(): void {
+    this.lifetime.abort();
+    this.nodes = [];
+    this.nodesByPath.clear();
+    this.childrenByPath.clear();
+    this.emitter.dispose();
+  }
 
-      if (
-        filters.tags.length > 0 ||
-        filters.owners.length > 0 ||
-        filters.testcaseStatus.length > 0 ||
-        filters.issueHas.length > 0 ||
-        filters.issueStatus.length > 0 ||
-        filters.scopedOnly
-      ) {
-        const searchFilters: SearchFilters = {};
-        if (filters.tags.length > 0) {
-          searchFilters.tags = filters.tags;
-        }
-
-        const snapshot = await getWorkspaceSnapshot(this.rootDirectory, searchFilters);
-        const allowedCasePaths = new Set(
-          snapshot.cases
-            .filter((item) => matchCaseWithFilters(item, filters))
-            .map((item) => item.path)
-        );
-
-        nodes = nodes.filter((node) => node.type !== "case" || allowedCasePaths.has(node.path));
-        nodes = pruneEmptySuites(nodes);
-        assignSuiteStatuses(nodes);
+  private publish(nodes: TreeNodeModel[]): void {
+    this.nodes = nodes;
+    this.nodesByPath.clear();
+    this.childrenByPath.clear();
+    for (const node of nodes) {
+      if (!this.nodesByPath.has(node.path)) this.nodesByPath.set(node.path, node);
+      if (node.parentPath) {
+        const children = this.childrenByPath.get(node.parentPath) ?? [];
+        children.push(node);
+        this.childrenByPath.set(node.parentPath, children);
       }
-
-      this.nodes = nodes;
-    } catch (error) {
-      this.nodes = [
-        {
-          id: "guide-load-error",
-          label: this.t("Failed to load TLog root"),
-          type: "guide",
-          path: this.rootDirectory,
-          description: String(error)
-        }
-      ];
     }
     this.emitter.fire();
+  }
+
+  private async refreshLatest(): Promise<void> {
+    let completed = -1;
+    while (!this.lifetime.signal.aborted && completed !== this.refreshVersion) {
+      const version = this.refreshVersion;
+      const root = this.rootDirectory;
+      const filters = structuredClone(
+        normalizeTreeFilters(this.context.workspaceState.get<TreeFilters>(this.filterKey))
+      );
+      const current = () =>
+        !this.lifetime.signal.aborted &&
+        version === this.refreshVersion &&
+        root === this.rootDirectory;
+      if (!root) {
+        this.publish([
+          {
+            id: "guide-select-root",
+            label: this.t("Set Root from tree title action"),
+            type: "guide",
+            path: "",
+            description: this.t("Use Set Root button in TLog view")
+          }
+        ]);
+        completed = version;
+        continue;
+      }
+
+      try {
+        const filtering =
+          filters.tags.length > 0 ||
+          filters.owners.length > 0 ||
+          filters.testcaseStatus.length > 0 ||
+          filters.issueHas.length > 0 ||
+          filters.issueStatus.length > 0 ||
+          filters.scopedOnly;
+        const searchFilters: SearchFilters | undefined = filtering ? {} : undefined;
+        if (searchFilters && filters.tags.length > 0) searchFilters.tags = filters.tags;
+        const loaded = await loadTreeData(root, this.t, searchFilters, this.lifetime.signal);
+        if (!current()) continue;
+        let nodes = loaded.nodes;
+        if (loaded.snapshot) {
+          const allowedCasePaths = new Set(
+            loaded.snapshot.cases
+              .filter((item) => matchCaseWithFilters(item, filters))
+              .map((item) => item.path)
+          );
+
+          nodes = nodes.filter((node) => node.type !== "case" || allowedCasePaths.has(node.path));
+          nodes = pruneEmptySuites(nodes);
+          assignSuiteStatuses(nodes);
+        }
+
+        this.publish(nodes);
+      } catch (error) {
+        if (!current()) continue;
+        this.publish([
+          {
+            id: "guide-load-error",
+            label: this.t("Failed to load TLog root"),
+            type: "guide",
+            path: root,
+            description: String(error)
+          }
+        ]);
+      }
+      completed = version;
+    }
   }
 
   getTreeItem(element: TreeNodeModel): vscode.TreeItem {
@@ -197,7 +242,7 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
     }
 
     if (element.type === "suite") {
-      return Promise.resolve(this.nodes.filter((n) => n.parentPath === element.path));
+      return Promise.resolve([...(this.childrenByPath.get(element.path) ?? [])]);
     }
 
     return Promise.resolve([]);
@@ -207,6 +252,6 @@ export class TlogTreeDataProvider implements vscode.TreeDataProvider<TreeNodeMod
     if (!element.parentPath) {
       return undefined;
     }
-    return this.nodes.find((node) => node.path === element.parentPath);
+    return this.nodesByPath.get(element.parentPath);
   }
 }

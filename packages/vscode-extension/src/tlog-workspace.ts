@@ -1,5 +1,5 @@
 import { identityTranslate, type Translate } from "./localization.js";
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   type IdIndex,
@@ -18,6 +18,7 @@ import {
   validateSuite,
   writeYamlFileAtomic
 } from "@tlog/shared";
+import { forEachBounded, IoLimiter, LoadCoordinator } from "./load-control.js";
 
 export type NodeType = "suite" | "case" | "guide";
 export type SuiteStatus = "default" | "doing" | "done";
@@ -74,46 +75,145 @@ export interface WorkspaceSnapshot {
 }
 
 const SUITE_FILE = "index.yaml";
+const workspaceIo = new IoLimiter(8);
 
-export async function findSuiteFiles(rootDir: string): Promise<string[]> {
-  const found: string[] = [];
-  const queue = [rootDir];
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) {
-      continue;
-    }
-
-    const entries = await readdir(current, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = join(current, entry.name);
-      if (entry.isDirectory()) {
-        queue.push(fullPath);
-        continue;
-      }
-
-      if (entry.isFile() && (entry.name === SUITE_FILE || entry.name.endsWith(".suite.yaml"))) {
-        found.push(fullPath);
-      }
-    }
+async function discoverWorkspace(
+  rootDir: string,
+  signal?: AbortSignal
+): Promise<{
+  suites: string[];
+  casesByDirectory: Map<string, string[]>;
+}> {
+  const suites: string[] = [];
+  const casesByDirectory = new Map<string, string[]>();
+  const pending = [rootDir];
+  while (pending.length > 0) {
+    const batch = pending.splice(0, workspaceIo.limit);
+    await forEachBounded(
+      batch,
+      workspaceIo.limit,
+      async (directory) => {
+        const entries = await workspaceIo.run(async () => {
+          signal?.throwIfAborted();
+          return readdir(directory, { withFileTypes: true });
+        });
+        let hasSuite = false;
+        const cases: string[] = [];
+        for (const entry of entries) {
+          const path = join(directory, entry.name);
+          if (entry.isDirectory()) pending.push(path);
+          else if (entry.isFile()) {
+            if (entry.name === SUITE_FILE || entry.name.endsWith(".suite.yaml")) {
+              suites.push(path);
+              hasSuite = true;
+            } else if (entry.name.endsWith(".yaml")) cases.push(path);
+          }
+        }
+        if (hasSuite) casesByDirectory.set(directory, cases.sort());
+      },
+      signal
+    );
   }
-
-  return found.sort();
+  return { suites: suites.sort(), casesByDirectory };
 }
 
-async function findCaseFiles(dir: string): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  return entries
-    .filter(
-      (entry) =>
-        entry.isFile() &&
-        entry.name.endsWith(".yaml") &&
-        entry.name !== SUITE_FILE &&
-        !entry.name.endsWith(".suite.yaml")
-    )
-    .map((entry) => join(dir, entry.name))
-    .sort();
+export async function findSuiteFiles(rootDir: string): Promise<string[]> {
+  return (await discoverWorkspace(rootDir)).suites;
+}
+
+function freezeEntity<T>(value: T): T {
+  const pending: unknown[] = [value];
+  const seen = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    for (const child of Object.values(current)) pending.push(child);
+    Object.freeze(current);
+  }
+  return value;
+}
+
+/** Detailed entities live only inside a scoped load consumer, never in a panel cache. */
+export interface WorkspaceLoadModel {
+  readonly nodes: readonly Readonly<TreeNodeModel>[];
+  getSuite(path: string): Suite | undefined;
+  getCase(path: string): TestCase | undefined;
+}
+
+async function readWorkspaceModel(
+  rootDir: string,
+  signal: AbortSignal
+): Promise<WorkspaceLoadModel> {
+  const discovery = await discoverWorkspace(rootDir, signal);
+  const entities = new Map<string, Suite | TestCase>();
+  const diagnostics = new Map<string, string | undefined>();
+  const suitePaths = new Set(discovery.suites);
+  const files = [...suitePaths, ...new Set([...discovery.casesByDirectory.values()].flat())];
+  await forEachBounded(
+    files,
+    workspaceIo.limit,
+    async (path) => {
+      const raw = await workspaceIo.run(async () => {
+        signal.throwIfAborted();
+        return readFile(path, { encoding: "utf8", signal });
+      });
+      signal.throwIfAborted();
+      const entity = parseYaml<Suite | TestCase>(raw);
+      const validation = suitePaths.has(path) ? validateSuite(entity) : validateCase(entity);
+      diagnostics.set(
+        path,
+        validation.ok ? undefined : validation.errors.map((error) => error.message).join(", ")
+      );
+      entities.set(path, freezeEntity(entity));
+    },
+    signal
+  );
+  const nodes: TreeNodeModel[] = [];
+  for (const path of discovery.suites) {
+    const suite = entities.get(path) as Suite;
+    const parentIndex = join(dirname(dirname(path)), SUITE_FILE);
+    nodes.push({
+      id: suite.id,
+      label: `${suite.id}: ${suite.title}`,
+      type: "suite",
+      path,
+      parentPath: suitePaths.has(parentIndex) ? parentIndex : undefined,
+      description: diagnostics.get(path)
+    });
+    for (const casePath of discovery.casesByDirectory.get(dirname(path)) ?? []) {
+      const testCase = entities.get(casePath) as TestCase;
+      nodes.push({
+        id: testCase.id,
+        label: `${testCase.id}: ${testCase.title}`,
+        type: "case",
+        path: casePath,
+        parentPath: path,
+        description: diagnostics.get(casePath),
+        status: testCase.status ?? null
+      });
+    }
+  }
+  return Object.freeze({
+    nodes: Object.freeze(nodes.map((node) => Object.freeze(node))),
+    getSuite: (path: string) => (suitePaths.has(path) ? (entities.get(path) as Suite) : undefined),
+    getCase: (path: string) =>
+      !suitePaths.has(path) ? (entities.get(path) as TestCase | undefined) : undefined
+  });
+}
+
+const workspaceLoads = new LoadCoordinator(readWorkspaceModel);
+
+export function invalidateWorkspaceLoad(rootDir: string): void {
+  workspaceLoads.invalidate(rootDir);
+}
+
+export function withWorkspaceModel<T>(
+  rootDir: string,
+  consume: (model: WorkspaceLoadModel, current: () => boolean) => T | Promise<T>,
+  signal?: AbortSignal
+): Promise<T> {
+  return workspaceLoads.run(rootDir, consume, signal);
 }
 
 function addStatusCounts(target: SuiteStatusCounts, source: SuiteStatusCounts): void {
@@ -205,8 +305,31 @@ export async function loadTree(
   rootDir: string,
   t: Translate = identityTranslate
 ): Promise<TreeNodeModel[]> {
-  const suiteFiles = await findSuiteFiles(rootDir);
-  if (suiteFiles.length === 0) {
+  return withWorkspaceModel(rootDir, (model) => treeFromWorkspaceModel(rootDir, model, t));
+}
+
+export function loadTreeData(
+  rootDir: string,
+  t: Translate = identityTranslate,
+  filters?: SearchFilters,
+  signal?: AbortSignal
+): Promise<{ nodes: TreeNodeModel[]; snapshot?: WorkspaceSnapshot }> {
+  return withWorkspaceModel(
+    rootDir,
+    (model) => ({
+      nodes: treeFromWorkspaceModel(rootDir, model, t),
+      snapshot: filters === undefined ? undefined : snapshotFromWorkspaceModel(model, filters)
+    }),
+    signal
+  );
+}
+
+export function treeFromWorkspaceModel(
+  rootDir: string,
+  model: WorkspaceLoadModel,
+  t: Translate = identityTranslate
+): TreeNodeModel[] {
+  if (model.nodes.length === 0) {
     return [
       {
         id: "guide-no-index",
@@ -225,52 +348,10 @@ export async function loadTree(
     ];
   }
 
-  const suitePathSet = new Set(suiteFiles);
-  const nodes: TreeNodeModel[] = [];
-
-  for (const suiteFile of suiteFiles) {
-    const suite = await readYamlFile<Suite>(suiteFile);
-    const suiteValidation = validateSuite(suite);
-    const parentDir = dirname(dirname(suiteFile));
-    const parentIndex = join(parentDir, SUITE_FILE);
-    const parentSuitePath = suitePathSet.has(parentIndex) ? parentIndex : undefined;
-    const suiteNode: TreeNodeModel = {
-      id: suite.id,
-      label:
-        suiteValidation.ok && suiteValidation.data
-          ? `${suite.id}: ${suite.title}`
-          : `${suite.id}: ${suite.title} (${t("invalid")})`,
-      type: "suite",
-      path: suiteFile,
-      parentPath: parentSuitePath,
-      description: suiteValidation.ok
-        ? undefined
-        : suiteValidation.errors.map((error) => error.message).join(", ")
-    };
-
-    nodes.push(suiteNode);
-
-    const caseFiles = await findCaseFiles(dirname(suiteFile));
-    for (const caseFile of caseFiles) {
-      const testCase = await readYamlFile<TestCase>(caseFile);
-      const caseValidation = validateCase(testCase);
-      const status = testCase.status ?? null;
-      nodes.push({
-        id: testCase.id,
-        label: caseValidation.ok
-          ? `${testCase.id}: ${testCase.title}`
-          : `${testCase.id}: ${testCase.title} (${t("invalid")})`,
-        type: "case",
-        path: caseFile,
-        parentPath: suiteFile,
-        description: caseValidation.ok
-          ? undefined
-          : caseValidation.errors.map((error) => error.message).join(", "),
-        status
-      });
-    }
-  }
-
+  const nodes = model.nodes.map((node) => ({
+    ...node,
+    label: node.description === undefined ? node.label : `${node.label} (${t("invalid")})`
+  }));
   assignSuiteStatuses(nodes);
 
   return nodes;
@@ -470,14 +551,24 @@ export async function getWorkspaceSnapshot(
   rootDir: string,
   filters: SearchFilters = {}
 ): Promise<WorkspaceSnapshot> {
-  const nodes = await loadTree(rootDir);
+  return withWorkspaceModel(rootDir, (model) => snapshotFromWorkspaceModel(model, filters));
+}
+
+export function snapshotFromWorkspaceModel(
+  model: WorkspaceLoadModel,
+  filters: SearchFilters = {}
+): WorkspaceSnapshot {
+  const nodes = model.nodes;
   const suites: SuiteCard[] = [];
   const suiteMap = new Map<string, Suite>();
   const cases: CaseCard[] = [];
+  const suiteNodes = new Map(
+    nodes.filter((node) => node.type === "suite").map((node) => [node.path, node])
+  );
 
   for (const node of nodes) {
     if (node.type === "suite") {
-      const suite = await readYamlFile<Suite>(node.path);
+      const suite = model.getSuite(node.path)!;
       suiteMap.set(node.path, suite);
       suites.push({
         id: suite.id,
@@ -490,7 +581,7 @@ export async function getWorkspaceSnapshot(
     }
 
     if (node.type === "case") {
-      const testCase = await readYamlFile<TestCase>(node.path);
+      const testCase = model.getCase(node.path)!;
       cases.push({
         id: testCase.id,
         title: testCase.title,
@@ -500,9 +591,7 @@ export async function getWorkspaceSnapshot(
         description: testCase.description,
         owners: testCase.owners,
         tags: testCase.tags,
-        suiteId: nodes.find(
-          (candidate) => candidate.type === "suite" && candidate.path === node.parentPath
-        )?.id,
+        suiteId: node.parentPath ? suiteNodes.get(node.parentPath)?.id : undefined,
         suiteOwners:
           node.parentPath && suiteMap.get(node.parentPath)
             ? suiteMap.get(node.parentPath)!.owners
@@ -546,14 +635,22 @@ export async function getWorkspaceSnapshot(
     testCase.suiteScoped = suiteScoped;
   }
 
-  const caseEntities = casesToTestCase(cases);
+  return filterWorkspaceSnapshot({ suites, cases }, filters);
+}
+
+export function filterWorkspaceSnapshot(
+  snapshot: WorkspaceSnapshot,
+  filters: SearchFilters = {}
+): WorkspaceSnapshot {
+  if (Object.keys(filters).length === 0) return snapshot;
+  const caseEntities = casesToTestCase(snapshot.cases);
   const filtered =
     Object.keys(filters).length > 0 ? filterEntities(caseEntities, filters).items : caseEntities;
   const allowedPaths = new Set(filtered.map((item) => item.path));
 
   return {
-    suites,
-    cases: cases.filter((item) => allowedPaths.has(item.path))
+    suites: snapshot.suites,
+    cases: snapshot.cases.filter((item) => allowedPaths.has(item.path))
   };
 }
 
